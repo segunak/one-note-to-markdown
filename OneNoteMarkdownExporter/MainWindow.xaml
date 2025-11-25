@@ -45,7 +45,13 @@
             </Grid>
 
             <CheckBox x:Name="ExpandCollapsedBox" Content="Try to expand collapsed paragraphs (Writable notebooks only)" IsChecked="True" Margin="0,0,0,5"/>
-            <CheckBox x:Name="OverwriteExistingBox" Content="Overwrite existing files (keeps export in sync)" IsChecked="True" Margin="0,0,0,10"/>
+            <CheckBox x:Name="OverwriteExistingBox" Content="Overwrite existing files (keeps export in sync)" IsChecked="True" Margin="0,0,0,5"/>
+            
+            <!-- Linting options -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                <CheckBox x:Name="LintMarkdownBox" Content="Apply Markdown formatting rules" IsChecked="True" VerticalAlignment="Center"/>
+                <Button Content="Configure Rules..." Click="ConfigureLinting_Click" Padding="8,2" Margin="10,0,0,0" FontSize="11"/>
+            </StackPanel>
             
             <!-- Selection status indicator -->
             <Border x:Name="SelectionStatusBorder" Background="#FFF3CD" BorderBrush="#FFECB5" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,0,0,10">

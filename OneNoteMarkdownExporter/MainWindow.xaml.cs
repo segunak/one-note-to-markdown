@@ -16,6 +16,8 @@ namespace OneNoteMarkdownExporter
         private OneNoteService? _oneNoteService;
         private MarkdownConverterService _markdownConverter;
         private OneNoteXmlToMarkdownConverter _xmlConverter;
+        private MarkdownLinter _linter;
+        private LintOptions _lintOptions;
         private CancellationTokenSource? _cts;
 
         public MainWindow()
@@ -23,6 +25,8 @@ namespace OneNoteMarkdownExporter
             InitializeComponent();
             _markdownConverter = new MarkdownConverterService();
             _xmlConverter = new OneNoteXmlToMarkdownConverter();
+            _lintOptions = LintOptions.CreateDefault();
+            _linter = new MarkdownLinter(_lintOptions);
             Loaded += MainWindow_Loaded;
             
             // Subscribe to selection changes
@@ -167,6 +171,7 @@ namespace OneNoteMarkdownExporter
 
             bool expandCollapsed = ExpandCollapsedBox.IsChecked == true;
             bool overwriteExisting = OverwriteExistingBox.IsChecked == true;
+            bool applyLinting = LintMarkdownBox.IsChecked == true;
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
 
@@ -177,7 +182,7 @@ namespace OneNoteMarkdownExporter
                     foreach (var item in items)
                     {
                         if (token.IsCancellationRequested) break;
-                        ExportItem(item, rootPath, rootPath, expandCollapsed, overwriteExisting, token);
+                        ExportItem(item, rootPath, rootPath, expandCollapsed, overwriteExisting, applyLinting, token);
                     }
                     
                     if (token.IsCancellationRequested)
@@ -211,7 +216,20 @@ namespace OneNoteMarkdownExporter
             }
         }
 
-        private void ExportItem(OneNoteItem item, string currentPath, string rootPath, bool expandCollapsed, bool overwriteExisting, CancellationToken token)
+        private void ConfigureLinting_Click(object sender, RoutedEventArgs e)
+        {
+            var configWindow = new LintConfigWindow(_lintOptions);
+            configWindow.Owner = this;
+            
+            if (configWindow.ShowDialog() == true && configWindow.WasSaved)
+            {
+                _lintOptions = configWindow.Options;
+                _linter = new MarkdownLinter(_lintOptions);
+                Log("Linting rules updated.");
+            }
+        }
+
+        private void ExportItem(OneNoteItem item, string currentPath, string rootPath, bool expandCollapsed, bool overwriteExisting, bool applyLinting, CancellationToken token)
         {
             if (token.IsCancellationRequested) return;
 
@@ -240,7 +258,7 @@ namespace OneNoteMarkdownExporter
 
                     // If parent (this item) is selected, treat child as selected
                     if (isSelected) child.IsSelected = true; 
-                    ExportItem(child, myPath, rootPath, expandCollapsed, overwriteExisting, token);
+                    ExportItem(child, myPath, rootPath, expandCollapsed, overwriteExisting, applyLinting, token);
                 }
             }
             else
@@ -248,7 +266,7 @@ namespace OneNoteMarkdownExporter
                 // It's a page
                 if (isSelected)
                 {
-                    ExportPage(item, currentPath, rootPath, expandCollapsed, overwriteExisting, token);
+                    ExportPage(item, currentPath, rootPath, expandCollapsed, overwriteExisting, applyLinting, token);
                 }
             }
         }
@@ -262,7 +280,7 @@ namespace OneNoteMarkdownExporter
             return false;
         }
 
-        private void ExportPage(OneNoteItem page, string folderPath, string rootPath, bool expandCollapsed, bool overwriteExisting, CancellationToken token)
+        private void ExportPage(OneNoteItem page, string folderPath, string rootPath, bool expandCollapsed, bool overwriteExisting, bool applyLinting, CancellationToken token)
         {
             if (_oneNoteService == null) return;
             if (token.IsCancellationRequested) return;
@@ -306,6 +324,12 @@ namespace OneNoteMarkdownExporter
                 
                 // Convert XML directly to Markdown (no Publish API needed)
                 var markdown = _xmlConverter.Convert(pageXml, assetsRoot, relativeAssetsPath);
+                
+                // Apply linting if enabled
+                if (applyLinting)
+                {
+                    markdown = _linter.Lint(markdown);
+                }
                 
                 File.WriteAllText(finalMdPath, markdown);
                 
