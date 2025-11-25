@@ -499,18 +499,15 @@ namespace OneNoteMarkdownExporter.Services
                     return $"]({url})";
                 });
 
-            // Fix escaped asterisks in code-like content (SQL, etc.)
-            // This is a bit aggressive but helps with select * type statements
-            // Only unescape \* when it appears to be in a code context
-            markdown = Regex.Replace(markdown, @"select\s+\\\*", "select *", RegexOptions.IgnoreCase);
-            markdown = Regex.Replace(markdown, @"\\\*\s+from", "* from", RegexOptions.IgnoreCase);
-            markdown = Regex.Replace(markdown,
-                @"\]\(([^)]+)\)",
-                match => {
-                    var url = match.Groups[1].Value;
-                    url = url.Replace("\\_", "_");
-                    return $"]({url})";
-                });
+            // Fix escaped underscores in general text
+            // ReverseMarkdown escapes underscores to prevent italic formatting,
+            // but this looks wrong in code, variable names, etc.
+            // We'll unescape all \_ to _ since OneNote doesn't use markdown formatting
+            markdown = markdown.Replace("\\_", "_");
+
+            // Fix escaped asterisks in general text
+            // Same reasoning - OneNote content shouldn't have escaped asterisks
+            markdown = markdown.Replace("\\*", "*");
 
             // Convert naked URL links [url](url) to <url> format
             // This handles cases where the link text matches the URL
