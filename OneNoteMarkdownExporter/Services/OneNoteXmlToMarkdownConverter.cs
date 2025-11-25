@@ -130,6 +130,9 @@ namespace OneNoteMarkdownExporter.Services
                 bool isBullet = listElement?.Element(_ns + "Bullet") != null;
                 bool isNumbered = listElement?.Element(_ns + "Number") != null;
 
+                // Check if this OE has any real content (not just whitespace)
+                bool hasContent = HasRealContent(oe);
+
                 // Handle list transitions
                 if (isBullet && !inBulletList)
                 {
@@ -145,16 +148,64 @@ namespace OneNoteMarkdownExporter.Services
                 }
                 else if (!isBullet && !isNumbered && (inBulletList || inNumberedList))
                 {
-                    if (inBulletList) { html.AppendLine("</ul>"); inBulletList = false; }
-                    if (inNumberedList) { html.AppendLine("</ol>"); inNumberedList = false; }
+                    // Only close the list if this is a non-empty paragraph
+                    // Empty paragraphs (blank lines) should not break list continuity
+                    if (hasContent)
+                    {
+                        if (inBulletList) { html.AppendLine("</ul>"); inBulletList = false; }
+                        if (inNumberedList) { html.AppendLine("</ol>"); inNumberedList = false; }
+                    }
+                    // If no content, just skip - don't close the list
                 }
 
-                ProcessOE(oe, html, inBulletList || inNumberedList);
+                // Only process if it has content or is a list item
+                if (hasContent || isBullet || isNumbered)
+                {
+                    ProcessOE(oe, html, inBulletList || inNumberedList);
+                }
             }
 
             // Close any open lists
             if (inBulletList) html.AppendLine("</ul>");
             if (inNumberedList) html.AppendLine("</ol>");
+        }
+
+        /// <summary>
+        /// Checks if an OE element has any real text content (not just whitespace or empty elements)
+        /// </summary>
+        private bool HasRealContent(XElement oe)
+        {
+            // Check text elements
+            foreach (var t in oe.Elements(_ns + "T"))
+            {
+                var cdata = t.Nodes().OfType<XCData>().FirstOrDefault();
+                var text = cdata?.Value ?? t.Value;
+                // Strip HTML tags and check if there's real content
+                text = Regex.Replace(text, "<[^>]+>", "");
+                if (!string.IsNullOrWhiteSpace(text))
+                    return true;
+            }
+            
+            // Check for images
+            if (oe.Elements(_ns + "Image").Any())
+                return true;
+            
+            // Check for tables
+            if (oe.Elements(_ns + "Table").Any())
+                return true;
+            
+            // Check nested children
+            var nestedChildren = oe.Element(_ns + "OEChildren");
+            if (nestedChildren != null && nestedChildren.Elements(_ns + "OE").Any())
+            {
+                foreach (var child in nestedChildren.Elements(_ns + "OE"))
+                {
+                    if (HasRealContent(child))
+                        return true;
+                }
+            }
+
+            return false;
         }
 
         private void ProcessOE(XElement oe, StringBuilder html, bool inList)
