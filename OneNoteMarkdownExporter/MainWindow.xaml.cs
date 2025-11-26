@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -16,7 +17,8 @@ namespace OneNoteMarkdownExporter
         private OneNoteService? _oneNoteService;
         private MarkdownConverterService _markdownConverter;
         private OneNoteXmlToMarkdownConverter _xmlConverter;
-        private MarkdownLinter _linter;
+        private MarkdownLinter _builtInLinter;
+        private MarkdownLintCliService _cliLinter;
         private LintOptions _lintOptions;
         private CancellationTokenSource? _cts;
 
@@ -26,7 +28,8 @@ namespace OneNoteMarkdownExporter
             _markdownConverter = new MarkdownConverterService();
             _xmlConverter = new OneNoteXmlToMarkdownConverter();
             _lintOptions = LintOptions.CreateDefault();
-            _linter = new MarkdownLinter(_lintOptions);
+            _builtInLinter = new MarkdownLinter(_lintOptions);
+            _cliLinter = new MarkdownLintCliService();
             Loaded += MainWindow_Loaded;
             
             // Subscribe to selection changes
@@ -117,6 +120,44 @@ namespace OneNoteMarkdownExporter
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             LoadNotebooks();
+            UpdateMarkdownLintCliStatus();
+        }
+
+        private void UpdateMarkdownLintCliStatus()
+        {
+            if (_cliLinter.IsAvailable)
+            {
+                MarkdownLintCliStatus.Text = "✓ Available";
+                MarkdownLintCliStatus.Foreground = new System.Windows.Media.SolidColorBrush(
+                    (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#28A745"));
+                UseMarkdownLintCliRadio.IsEnabled = true;
+            }
+            else
+            {
+                MarkdownLintCliStatus.Text = "✗ Not installed";
+                MarkdownLintCliStatus.Foreground = new System.Windows.Media.SolidColorBrush(
+                    (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#DC3545"));
+                UseMarkdownLintCliRadio.IsEnabled = false;
+                UseBuiltInLinterRadio.IsChecked = true;
+            }
+        }
+
+        private void LinterChoice_Changed(object sender, RoutedEventArgs e)
+        {
+            // Update Configure button text based on selection
+            if (ConfigureLintingButton != null)
+            {
+                if (UseBuiltInLinterRadio.IsChecked == true)
+                {
+                    ConfigureLintingButton.Content = "Configure Rules...";
+                    ConfigureLintingButton.IsEnabled = true;
+                }
+                else
+                {
+                    ConfigureLintingButton.Content = "Edit .markdownlint.json...";
+                    ConfigureLintingButton.IsEnabled = _cliLinter.IsAvailable;
+                }
+            }
         }
 
         private void LoadNotebooks()
@@ -172,8 +213,14 @@ namespace OneNoteMarkdownExporter
             bool expandCollapsed = ExpandCollapsedBox.IsChecked == true;
             bool overwriteExisting = OverwriteExistingBox.IsChecked == true;
             bool applyLinting = LintMarkdownBox.IsChecked == true;
+            bool useCliLinter = UseMarkdownLintCliRadio.IsChecked == true && _cliLinter.IsAvailable;
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
+
+            if (applyLinting)
+            {
+                Log($"Using linter: {(useCliLinter ? "markdownlint-cli" : "Built-in")}");
+            }
 
             await Task.Run(() =>
             {
@@ -182,7 +229,7 @@ namespace OneNoteMarkdownExporter
                     foreach (var item in items)
                     {
                         if (token.IsCancellationRequested) break;
-                        ExportItem(item, rootPath, rootPath, expandCollapsed, overwriteExisting, applyLinting, token);
+                        ExportItem(item, rootPath, rootPath, expandCollapsed, overwriteExisting, applyLinting, useCliLinter, token);
                     }
                     
                     if (token.IsCancellationRequested)
@@ -218,18 +265,51 @@ namespace OneNoteMarkdownExporter
 
         private void ConfigureLinting_Click(object sender, RoutedEventArgs e)
         {
-            var configWindow = new LintConfigWindow(_lintOptions);
-            configWindow.Owner = this;
-            
-            if (configWindow.ShowDialog() == true && configWindow.WasSaved)
+            if (UseBuiltInLinterRadio.IsChecked == true)
             {
-                _lintOptions = configWindow.Options;
-                _linter = new MarkdownLinter(_lintOptions);
-                Log("Linting rules updated.");
+                // Show built-in linter configuration
+                var configWindow = new LintConfigWindow(_lintOptions);
+                configWindow.Owner = this;
+                
+                if (configWindow.ShowDialog() == true && configWindow.WasSaved)
+                {
+                    _lintOptions = configWindow.Options;
+                    _builtInLinter = new MarkdownLinter(_lintOptions);
+                    Log("Linting rules updated.");
+                }
+            }
+            else
+            {
+                // Open the .markdownlint.json config file
+                var configPath = Path.Combine(AppContext.BaseDirectory, "resources", ".markdownlint.json");
+                if (File.Exists(configPath))
+                {
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = configPath,
+                            UseShellExecute = true
+                        });
+                        Log($"Opened config file: {configPath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Error opening config file: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    System.Windows.MessageBox.Show(
+                        "Config file not found. Please ensure markdownlint-cli is installed in the resources folder.",
+                        "Configuration",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
             }
         }
 
-        private void ExportItem(OneNoteItem item, string currentPath, string rootPath, bool expandCollapsed, bool overwriteExisting, bool applyLinting, CancellationToken token)
+        private void ExportItem(OneNoteItem item, string currentPath, string rootPath, bool expandCollapsed, bool overwriteExisting, bool applyLinting, bool useCliLinter, CancellationToken token)
         {
             if (token.IsCancellationRequested) return;
 
@@ -258,7 +338,7 @@ namespace OneNoteMarkdownExporter
 
                     // If parent (this item) is selected, treat child as selected
                     if (isSelected) child.IsSelected = true; 
-                    ExportItem(child, myPath, rootPath, expandCollapsed, overwriteExisting, applyLinting, token);
+                    ExportItem(child, myPath, rootPath, expandCollapsed, overwriteExisting, applyLinting, useCliLinter, token);
                 }
             }
             else
@@ -266,7 +346,7 @@ namespace OneNoteMarkdownExporter
                 // It's a page
                 if (isSelected)
                 {
-                    ExportPage(item, currentPath, rootPath, expandCollapsed, overwriteExisting, applyLinting, token);
+                    ExportPage(item, currentPath, rootPath, expandCollapsed, overwriteExisting, applyLinting, useCliLinter, token);
                 }
             }
         }
@@ -280,7 +360,7 @@ namespace OneNoteMarkdownExporter
             return false;
         }
 
-        private void ExportPage(OneNoteItem page, string folderPath, string rootPath, bool expandCollapsed, bool overwriteExisting, bool applyLinting, CancellationToken token)
+        private void ExportPage(OneNoteItem page, string folderPath, string rootPath, bool expandCollapsed, bool overwriteExisting, bool applyLinting, bool useCliLinter, CancellationToken token)
         {
             if (_oneNoteService == null) return;
             if (token.IsCancellationRequested) return;
@@ -328,7 +408,16 @@ namespace OneNoteMarkdownExporter
                 // Apply linting if enabled
                 if (applyLinting)
                 {
-                    markdown = _linter.Lint(markdown);
+                    if (useCliLinter)
+                    {
+                        // Use markdownlint-cli
+                        markdown = _cliLinter.LintContent(markdown);
+                    }
+                    else
+                    {
+                        // Use built-in linter
+                        markdown = _builtInLinter.Lint(markdown);
+                    }
                 }
                 
                 File.WriteAllText(finalMdPath, markdown);

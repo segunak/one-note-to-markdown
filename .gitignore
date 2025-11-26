@@ -2,3 +2,10 @@ bin/
 obj/
 .vs/
 *.user
+
+# Node.js dependencies for markdownlint-cli
+node_modules/
+
+# Optional: Uncomment to exclude node.exe from git (75MB file)
+# Users would need to download it separately or run npm install
+# OneNoteMarkdownExporter/resources/node.exe

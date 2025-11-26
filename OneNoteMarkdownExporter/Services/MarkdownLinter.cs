@@ -60,6 +60,22 @@ namespace OneNoteMarkdownExporter.Services
             if (Options.MD030_ListMarkerSpace)
                 markdown = FixListMarkerSpace(markdown);
 
+            if (Options.MD004_UnorderedListStyle)
+                markdown = FixUnorderedListStyle(markdown);
+
+            if (Options.MD007_UnorderedListIndent)
+                markdown = FixUnorderedListIndent(markdown);
+
+            if (Options.MD032_ListSurroundedByBlankLines)
+                markdown = FixListSurroundedByBlankLines(markdown);
+
+            // Table fixes
+            if (Options.MD055_TablePipeStyle)
+                markdown = FixTablePipeStyle(markdown);
+
+            if (Options.MD056_TableColumnCount)
+                markdown = FixTableColumnCount(markdown);
+
             // Inline formatting fixes
             if (Options.MD037_NoSpaceInEmphasis)
                 markdown = FixSpaceInEmphasis(markdown);
@@ -201,6 +217,176 @@ namespace OneNoteMarkdownExporter.Services
         }
 
         /// <summary>
+        /// MD004: Consistent unordered list style (use - for all)
+        /// * item → - item
+        /// + item → - item
+        /// </summary>
+        private string FixUnorderedListStyle(string markdown)
+        {
+            // Convert * and + list markers to - for consistency
+            markdown = Regex.Replace(markdown, 
+                @"^([ \t]*)\*( )", 
+                "$1-$2", 
+                RegexOptions.Multiline);
+            markdown = Regex.Replace(markdown, 
+                @"^([ \t]*)\+( )", 
+                "$1-$2", 
+                RegexOptions.Multiline);
+            return markdown;
+        }
+
+        /// <summary>
+        /// MD007: Unordered list indentation (2 spaces per level)
+        /// Normalizes odd indentation to proper 2-space multiples
+        /// </summary>
+        private string FixUnorderedListIndent(string markdown)
+        {
+            var lines = markdown.Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var match = Regex.Match(lines[i], @"^([ \t]*)([-*+])( .*)$");
+                if (match.Success)
+                {
+                    var indent = match.Groups[1].Value;
+                    var marker = match.Groups[2].Value;
+                    var rest = match.Groups[3].Value;
+                    
+                    // Convert tabs to spaces and count
+                    var spaces = indent.Replace("\t", "    ").Length;
+                    
+                    // Round to nearest 2-space multiple
+                    var normalizedSpaces = (spaces / 2) * 2;
+                    
+                    lines[i] = new string(' ', normalizedSpaces) + marker + rest;
+                }
+            }
+            return string.Join("\n", lines);
+        }
+
+        /// <summary>
+        /// MD032: Lists should be surrounded by blank lines
+        /// </summary>
+        private string FixListSurroundedByBlankLines(string markdown)
+        {
+            var lines = markdown.Split('\n').ToList();
+            var result = new List<string>();
+            
+            for (int i = 0; i < lines.Count; i++)
+            {
+                bool isListItem = Regex.IsMatch(lines[i], @"^[ \t]*[-*+]\s") || 
+                                  Regex.IsMatch(lines[i], @"^[ \t]*\d+\.\s");
+                bool prevIsListItem = i > 0 && (Regex.IsMatch(lines[i-1], @"^[ \t]*[-*+]\s") || 
+                                               Regex.IsMatch(lines[i-1], @"^[ \t]*\d+\.\s"));
+                bool prevIsBlank = i > 0 && string.IsNullOrWhiteSpace(lines[i-1]);
+                bool prevExists = i > 0;
+                
+                // Add blank line before list if needed
+                if (isListItem && prevExists && !prevIsListItem && !prevIsBlank)
+                {
+                    result.Add("");
+                }
+                
+                // Add blank line after list ends if needed
+                if (!isListItem && prevIsListItem && !string.IsNullOrWhiteSpace(lines[i]))
+                {
+                    result.Add("");
+                }
+                
+                result.Add(lines[i]);
+            }
+            
+            return string.Join("\n", result);
+        }
+
+        /// <summary>
+        /// MD055: Table pipe style - ensure consistent leading/trailing pipes
+        /// </summary>
+        private string FixTablePipeStyle(string markdown)
+        {
+            var lines = markdown.Split('\n');
+            bool inTable = false;
+            
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].Trim();
+                
+                // Detect table rows (contain | character)
+                if (line.Contains('|'))
+                {
+                    // Check if this looks like a table row
+                    bool isTableRow = Regex.IsMatch(line, @"\|.*\|") || 
+                                     Regex.IsMatch(line, @"^\|?") && line.Count(c => c == '|') >= 1;
+                    
+                    if (isTableRow)
+                    {
+                        inTable = true;
+                        // Ensure leading and trailing pipes
+                        if (!line.StartsWith("|"))
+                            line = "|" + line;
+                        if (!line.EndsWith("|"))
+                            line = line + "|";
+                        lines[i] = line;
+                    }
+                }
+                else if (inTable && string.IsNullOrWhiteSpace(line))
+                {
+                    inTable = false;
+                }
+            }
+            
+            return string.Join("\n", lines);
+        }
+
+        /// <summary>
+        /// MD056: Table column count - ensure all rows have same number of columns
+        /// </summary>
+        private string FixTableColumnCount(string markdown)
+        {
+            var lines = markdown.Split('\n');
+            var tableStart = -1;
+            var tableEnd = -1;
+            int expectedColumns = 0;
+            
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].Trim();
+                bool isTableRow = line.StartsWith("|") && line.EndsWith("|") && line.Length > 1;
+                
+                if (isTableRow)
+                {
+                    if (tableStart == -1)
+                    {
+                        tableStart = i;
+                        expectedColumns = line.Count(c => c == '|') - 1; // pipes - 1 = columns
+                    }
+                    tableEnd = i;
+                    
+                    // Count current columns
+                    int currentColumns = line.Count(c => c == '|') - 1;
+                    
+                    // Add missing pipes if needed
+                    if (currentColumns < expectedColumns)
+                    {
+                        var missingPipes = expectedColumns - currentColumns;
+                        // Insert before final pipe
+                        line = line.Substring(0, line.Length - 1) + 
+                               string.Concat(Enumerable.Repeat(" |", missingPipes)) + 
+                               "|";
+                        lines[i] = line;
+                    }
+                }
+                else if (tableStart != -1 && !isTableRow)
+                {
+                    // End of table
+                    tableStart = -1;
+                    expectedColumns = 0;
+                }
+            }
+            
+            return string.Join("\n", lines);
+        }
+
+        /// <summary>
         /// MD037: No spaces inside emphasis markers
         /// ** bold ** → **bold**
         /// * italic * → *italic*
@@ -294,6 +480,13 @@ namespace OneNoteMarkdownExporter.Services
 
         // List rules
         public bool MD030_ListMarkerSpace { get; set; } = true;
+        public bool MD004_UnorderedListStyle { get; set; } = true;
+        public bool MD007_UnorderedListIndent { get; set; } = true;
+        public bool MD032_ListSurroundedByBlankLines { get; set; } = true;
+
+        // Table rules
+        public bool MD055_TablePipeStyle { get; set; } = true;
+        public bool MD056_TableColumnCount { get; set; } = true;
 
         // Inline formatting rules
         public bool MD037_NoSpaceInEmphasis { get; set; } = true;
@@ -330,6 +523,11 @@ namespace OneNoteMarkdownExporter.Services
                 MD023_HeadingStartLeft = false,
                 MD027_NoMultipleSpaceBlockquote = false,
                 MD030_ListMarkerSpace = false,
+                MD004_UnorderedListStyle = false,
+                MD007_UnorderedListIndent = false,
+                MD032_ListSurroundedByBlankLines = false,
+                MD055_TablePipeStyle = false,
+                MD056_TableColumnCount = false,
                 MD037_NoSpaceInEmphasis = false,
                 MD038_NoSpaceInCode = false,
                 MD039_NoSpaceInLinks = false,
@@ -354,6 +552,11 @@ namespace OneNoteMarkdownExporter.Services
                 MD023_HeadingStartLeft = false,
                 MD027_NoMultipleSpaceBlockquote = false,
                 MD030_ListMarkerSpace = false,
+                MD004_UnorderedListStyle = false,
+                MD007_UnorderedListIndent = false,
+                MD032_ListSurroundedByBlankLines = false,
+                MD055_TablePipeStyle = false,
+                MD056_TableColumnCount = false,
                 MD037_NoSpaceInEmphasis = false,
                 MD038_NoSpaceInCode = false,
                 MD039_NoSpaceInLinks = false,
@@ -378,6 +581,11 @@ namespace OneNoteMarkdownExporter.Services
                 new LintRuleInfo("MD023", "Heading start left", "Headings must start at beginning of line", "Headings"),
                 new LintRuleInfo("MD027", "No multiple space blockquote", "Fix multiple spaces after > in blockquotes", "Blockquotes"),
                 new LintRuleInfo("MD030", "List marker space", "Correct spacing after list markers", "Lists"),
+                new LintRuleInfo("MD004", "Unordered list style", "Use consistent list markers (-)", "Lists"),
+                new LintRuleInfo("MD007", "Unordered list indent", "Consistent 2-space indentation", "Lists"),
+                new LintRuleInfo("MD032", "Lists surrounded by blank lines", "Add blank lines around lists", "Lists"),
+                new LintRuleInfo("MD055", "Table pipe style", "Consistent leading/trailing pipes", "Tables"),
+                new LintRuleInfo("MD056", "Table column count", "Consistent column count in tables", "Tables"),
                 new LintRuleInfo("MD037", "No space in emphasis", "Remove spaces inside **bold** and *italic*", "Formatting"),
                 new LintRuleInfo("MD038", "No space in code", "Remove spaces inside `code` spans", "Formatting"),
                 new LintRuleInfo("MD039", "No space in links", "Remove spaces inside [link text]", "Formatting"),
@@ -402,6 +610,11 @@ namespace OneNoteMarkdownExporter.Services
                 "MD023" => MD023_HeadingStartLeft,
                 "MD027" => MD027_NoMultipleSpaceBlockquote,
                 "MD030" => MD030_ListMarkerSpace,
+                "MD004" => MD004_UnorderedListStyle,
+                "MD007" => MD007_UnorderedListIndent,
+                "MD032" => MD032_ListSurroundedByBlankLines,
+                "MD055" => MD055_TablePipeStyle,
+                "MD056" => MD056_TableColumnCount,
                 "MD037" => MD037_NoSpaceInEmphasis,
                 "MD038" => MD038_NoSpaceInCode,
                 "MD039" => MD039_NoSpaceInLinks,
@@ -427,6 +640,11 @@ namespace OneNoteMarkdownExporter.Services
                 case "MD023": MD023_HeadingStartLeft = enabled; break;
                 case "MD027": MD027_NoMultipleSpaceBlockquote = enabled; break;
                 case "MD030": MD030_ListMarkerSpace = enabled; break;
+                case "MD004": MD004_UnorderedListStyle = enabled; break;
+                case "MD007": MD007_UnorderedListIndent = enabled; break;
+                case "MD032": MD032_ListSurroundedByBlankLines = enabled; break;
+                case "MD055": MD055_TablePipeStyle = enabled; break;
+                case "MD056": MD056_TableColumnCount = enabled; break;
                 case "MD037": MD037_NoSpaceInEmphasis = enabled; break;
                 case "MD038": MD038_NoSpaceInCode = enabled; break;
                 case "MD039": MD039_NoSpaceInLinks = enabled; break;
@@ -451,6 +669,11 @@ namespace OneNoteMarkdownExporter.Services
                 MD023_HeadingStartLeft = this.MD023_HeadingStartLeft,
                 MD027_NoMultipleSpaceBlockquote = this.MD027_NoMultipleSpaceBlockquote,
                 MD030_ListMarkerSpace = this.MD030_ListMarkerSpace,
+                MD004_UnorderedListStyle = this.MD004_UnorderedListStyle,
+                MD007_UnorderedListIndent = this.MD007_UnorderedListIndent,
+                MD032_ListSurroundedByBlankLines = this.MD032_ListSurroundedByBlankLines,
+                MD055_TablePipeStyle = this.MD055_TablePipeStyle,
+                MD056_TableColumnCount = this.MD056_TableColumnCount,
                 MD037_NoSpaceInEmphasis = this.MD037_NoSpaceInEmphasis,
                 MD038_NoSpaceInCode = this.MD038_NoSpaceInCode,
                 MD039_NoSpaceInLinks = this.MD039_NoSpaceInLinks,

@@ -487,7 +487,12 @@ namespace OneNoteMarkdownExporter.Services
         {
             // Convert <br> and <br/> tags to proper line breaks FIRST
             // These can appear in tables and regular content
-            markdown = Regex.Replace(markdown, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase);
+            // Handle all variations: <br>, <br/>, <br />, <br  />, <BR>, etc.
+            // Also handle versions with attributes like <br style="...">
+            markdown = Regex.Replace(markdown, @"<br[^>]*/?>", "\n", RegexOptions.IgnoreCase);
+            
+            // Also handle HTML-encoded versions that might slip through
+            markdown = Regex.Replace(markdown, @"&lt;br[^&]*/?&gt;", "\n", RegexOptions.IgnoreCase);
 
             // Aggressively find and convert ALL <a>...</a> tags to Markdown links
             // This regex handles any whitespace/newlines within the tag

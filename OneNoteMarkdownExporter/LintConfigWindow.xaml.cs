@@ -67,6 +67,31 @@ public partial class LintConfigWindow : Window
             Options.MD030_ListMarkerSpace));
 
         _rules.Add(new LintRuleViewModel(
+            new LintRuleInfo("MD004", "Unordered List Style", 
+                "Uses consistent list markers (converts * and + to -).", "Lists"),
+            Options.MD004_UnorderedListStyle));
+
+        _rules.Add(new LintRuleViewModel(
+            new LintRuleInfo("MD007", "Unordered List Indentation", 
+                "Normalizes list indentation to consistent 2-space multiples.", "Lists"),
+            Options.MD007_UnorderedListIndent));
+
+        _rules.Add(new LintRuleViewModel(
+            new LintRuleInfo("MD032", "Lists Surrounded by Blank Lines", 
+                "Ensures blank lines before and after lists.", "Lists"),
+            Options.MD032_ListSurroundedByBlankLines));
+
+        _rules.Add(new LintRuleViewModel(
+            new LintRuleInfo("MD055", "Table Pipe Style", 
+                "Ensures consistent leading and trailing pipes in tables.", "Tables"),
+            Options.MD055_TablePipeStyle));
+
+        _rules.Add(new LintRuleViewModel(
+            new LintRuleInfo("MD056", "Table Column Count", 
+                "Ensures all table rows have the same number of columns.", "Tables"),
+            Options.MD056_TableColumnCount));
+
+        _rules.Add(new LintRuleViewModel(
             new LintRuleInfo("MD037", "No Space in Emphasis", 
                 "Removes spaces inside emphasis markers (*text* or **text**).", "Formatting"),
             Options.MD037_NoSpaceInEmphasis));
@@ -103,11 +128,16 @@ public partial class LintConfigWindow : Window
         Options.MD023_HeadingStartLeft = _rules[6].IsEnabled;
         Options.MD027_NoMultipleSpaceBlockquote = _rules[7].IsEnabled;
         Options.MD030_ListMarkerSpace = _rules[8].IsEnabled;
-        Options.MD037_NoSpaceInEmphasis = _rules[9].IsEnabled;
-        Options.MD038_NoSpaceInCode = _rules[10].IsEnabled;
-        Options.MD039_NoSpaceInLinks = _rules[11].IsEnabled;
-        Options.MD034_NoBareUrls = _rules[12].IsEnabled;
-        Options.MD047_SingleTrailingNewline = _rules[13].IsEnabled;
+        Options.MD004_UnorderedListStyle = _rules[9].IsEnabled;
+        Options.MD007_UnorderedListIndent = _rules[10].IsEnabled;
+        Options.MD032_ListSurroundedByBlankLines = _rules[11].IsEnabled;
+        Options.MD055_TablePipeStyle = _rules[12].IsEnabled;
+        Options.MD056_TableColumnCount = _rules[13].IsEnabled;
+        Options.MD037_NoSpaceInEmphasis = _rules[14].IsEnabled;
+        Options.MD038_NoSpaceInCode = _rules[15].IsEnabled;
+        Options.MD039_NoSpaceInLinks = _rules[16].IsEnabled;
+        Options.MD034_NoBareUrls = _rules[17].IsEnabled;
+        Options.MD047_SingleTrailingNewline = _rules[18].IsEnabled;
     }
 
     private void EnableAll_Click(object sender, RoutedEventArgs e)
@@ -134,11 +164,16 @@ public partial class LintConfigWindow : Window
         _rules[6].IsEnabled = false; // MD023
         _rules[7].IsEnabled = false; // MD027
         _rules[8].IsEnabled = false; // MD030
-        _rules[9].IsEnabled = false; // MD037
-        _rules[10].IsEnabled = false; // MD038
-        _rules[11].IsEnabled = false; // MD039
-        _rules[12].IsEnabled = false; // MD034
-        _rules[13].IsEnabled = true; // MD047 - Trailing newline
+        _rules[9].IsEnabled = false; // MD004
+        _rules[10].IsEnabled = false; // MD007
+        _rules[11].IsEnabled = false; // MD032
+        _rules[12].IsEnabled = false; // MD055
+        _rules[13].IsEnabled = false; // MD056
+        _rules[14].IsEnabled = false; // MD037
+        _rules[15].IsEnabled = false; // MD038
+        _rules[16].IsEnabled = false; // MD039
+        _rules[17].IsEnabled = false; // MD034
+        _rules[18].IsEnabled = true; // MD047 - Trailing newline
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)
