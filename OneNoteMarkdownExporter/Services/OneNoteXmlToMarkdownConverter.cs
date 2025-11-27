@@ -374,20 +374,34 @@ namespace OneNoteMarkdownExporter.Services
         private string ConvertOneNoteStylesToHtml(string html)
         {
             // Convert OneNote's inline styles to standard HTML tags
+            
+            // Handle ALL background colors as highlights -> convert to bold
+            // This covers: background:#HEXVAL, background: #HEXVAL, background:yellow, etc.
+            // Process this FIRST before bold, so highlighted text becomes bold
+            // Use (.*?) with Singleline to handle nested HTML content
+            html = Regex.Replace(html,
+                @"<span[^>]*style='[^']*background\s*:\s*#?[a-zA-Z0-9]+[^']*'[^>]*>(.*?)</span>",
+                "<strong>$1</strong>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
             // font-weight:bold -> <strong>
+            // First try simple content (no nested tags) - this is the common case
             html = Regex.Replace(html, 
                 @"<span[^>]*style='[^']*font-weight:\s*bold[^']*'[^>]*>([^<]*)</span>",
                 "<strong>$1</strong>", RegexOptions.IgnoreCase);
+            // Then handle nested content (e.g., bold text with links inside)
+            html = Regex.Replace(html, 
+                @"<span[^>]*style='[^']*font-weight:\s*bold[^']*'[^>]*>(.*?)</span>",
+                "<strong>$1</strong>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
             
             // font-style:italic -> <em>
+            // First try simple content (no nested tags) - this is the common case
             html = Regex.Replace(html,
                 @"<span[^>]*style='[^']*font-style:\s*italic[^']*'[^>]*>([^<]*)</span>",
                 "<em>$1</em>", RegexOptions.IgnoreCase);
-
-            // background:yellow (highlight) -> <mark>
+            // Then handle nested content (e.g., italic text with links inside)
             html = Regex.Replace(html,
-                @"<span[^>]*style='[^']*background:\s*yellow[^']*'[^>]*>([^<]*)</span>",
-                "<mark>$1</mark>", RegexOptions.IgnoreCase);
+                @"<span[^>]*style='[^']*font-style:\s*italic[^']*'[^>]*>(.*?)</span>",
+                "<em>$1</em>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
             // Remove remaining span tags but keep content
             html = Regex.Replace(html, @"<span[^>]*>", "");
