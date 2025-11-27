@@ -11,6 +11,13 @@ using ReverseMarkdown;
 namespace OneNoteMarkdownExporter.Services
 {
     /// <summary>
+    /// Delegate for fetching binary content from OneNote using a callback ID.
+    /// </summary>
+    /// <param name="callbackId">The callback ID of the binary object.</param>
+    /// <returns>Base64-encoded string of the binary content, or null if not available.</returns>
+    public delegate string? BinaryContentFetcher(string callbackId);
+
+    /// <summary>
     /// Converts OneNote page XML directly to Markdown without using the Publish API.
     /// This bypasses DLP/sensitivity label restrictions that block the Publish() method.
     /// Uses ReverseMarkdown for proper HTML-to-Markdown conversion.
@@ -21,7 +28,9 @@ namespace OneNoteMarkdownExporter.Services
         private readonly Converter _markdownConverter;
         private string _assetsFolder = "";
         private string _relativeAssetsPath = "";
+        private string _pagePrefix = "";
         private int _imageCounter = 0;
+        private BinaryContentFetcher? _binaryContentFetcher;
 
         public OneNoteXmlToMarkdownConverter()
         {
@@ -35,11 +44,13 @@ namespace OneNoteMarkdownExporter.Services
             _markdownConverter = new Converter(config);
         }
 
-        public string Convert(string pageXml, string assetsFolder, string relativeAssetsPath)
+        public string Convert(string pageXml, string assetsFolder, string relativeAssetsPath, BinaryContentFetcher? binaryContentFetcher = null, string? pagePrefix = null)
         {
             _assetsFolder = assetsFolder;
             _relativeAssetsPath = relativeAssetsPath;
+            _pagePrefix = SanitizePrefix(pagePrefix);
             _imageCounter = 0;
+            _binaryContentFetcher = binaryContentFetcher;
 
             var doc = XDocument.Parse(pageXml);
             if (doc.Root == null) return "";
@@ -84,6 +95,34 @@ namespace OneNoteMarkdownExporter.Services
             markdown = CleanupMarkdown(markdown);
 
             return markdown;
+        }
+
+        /// <summary>
+        /// Sanitizes a page prefix for use in filenames by removing invalid characters.
+        /// </summary>
+        private static string SanitizePrefix(string? prefix)
+        {
+            if (string.IsNullOrWhiteSpace(prefix))
+                return "";
+            
+            // Remove characters that are invalid in filenames
+            var invalidChars = Path.GetInvalidFileNameChars();
+            var sanitized = new StringBuilder();
+            
+            foreach (var c in prefix)
+            {
+                if (!invalidChars.Contains(c) && c != ' ')
+                    sanitized.Append(c);
+                else if (c == ' ')
+                    sanitized.Append('_'); // Replace spaces with underscores
+            }
+            
+            // Trim and limit length to avoid overly long filenames
+            var result = sanitized.ToString().Trim('_');
+            if (result.Length > 50)
+                result = result.Substring(0, 50);
+            
+            return result;
         }
 
         /// <summary>
@@ -369,13 +408,34 @@ namespace OneNoteMarkdownExporter.Services
         {
             try
             {
+                string? base64Data = null;
+                
+                // First, try to get embedded data from the Data element
                 var dataElement = image.Element(_ns + "Data");
-                if (dataElement == null || string.IsNullOrWhiteSpace(dataElement.Value))
+                if (dataElement != null && !string.IsNullOrWhiteSpace(dataElement.Value))
                 {
-                    return "<p><em>[Image - no embedded data]</em></p>";
+                    base64Data = dataElement.Value.Trim();
                 }
-
-                var base64Data = dataElement.Value.Trim();
+                
+                // If no embedded data, try to fetch using callbackID
+                if (string.IsNullOrWhiteSpace(base64Data))
+                {
+                    var callbackId = image.Attribute("callbackID")?.Value;
+                    if (!string.IsNullOrWhiteSpace(callbackId) && _binaryContentFetcher != null)
+                    {
+                        base64Data = _binaryContentFetcher(callbackId);
+                    }
+                }
+                
+                // If we still don't have data, return a placeholder
+                if (string.IsNullOrWhiteSpace(base64Data))
+                {
+                    // Log additional info for debugging
+                    var callbackId = image.Attribute("callbackID")?.Value;
+                    var objectId = image.Attribute("objectID")?.Value;
+                    var info = $"callbackID={callbackId ?? "none"}, objectID={objectId ?? "none"}";
+                    return $"<p><em>[Image - no embedded data, could not fetch binary content. {System.Net.WebUtility.HtmlEncode(info)}]</em></p>";
+                }
                 
                 // Remove any whitespace from base64
                 base64Data = Regex.Replace(base64Data, @"\s+", "");
@@ -393,9 +453,11 @@ namespace OneNoteMarkdownExporter.Services
                     _ => ".png"
                 };
 
-                // Generate unique filename
+                // Generate unique filename with page prefix to avoid collisions across pages
                 _imageCounter++;
-                var fileName = $"image_{_imageCounter:D4}{extension}";
+                var fileName = string.IsNullOrEmpty(_pagePrefix)
+                    ? $"image_{_imageCounter:D4}{extension}"
+                    : $"{_pagePrefix}_image_{_imageCounter:D4}{extension}";
                 var filePath = Path.Combine(_assetsFolder, fileName);
 
                 // Ensure assets folder exists

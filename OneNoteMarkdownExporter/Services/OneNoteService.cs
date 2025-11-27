@@ -127,6 +127,28 @@ namespace OneNoteMarkdownExporter.Services
             _oneNoteApp.GetPageContent(pageId, out xml, PageInfo.piAll);
             return xml;
         }
+
+        /// <summary>
+        /// Retrieves binary content (such as images or ink) from a page using the callback ID.
+        /// This is needed when images are not embedded directly in the page XML but instead
+        /// referenced via a callbackID attribute.
+        /// </summary>
+        /// <param name="pageId">The OneNote ID of the page containing the binary object.</param>
+        /// <param name="callbackId">The callback ID of the binary object to retrieve.</param>
+        /// <returns>Base64-encoded string of the binary content, or null if retrieval fails.</returns>
+        public string? GetBinaryPageContent(string pageId, string callbackId)
+        {
+            try
+            {
+                string base64Content;
+                _oneNoteApp.GetBinaryPageContent(pageId, callbackId, out base64Content);
+                return base64Content;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
         
         public void UpdatePageContent(string xml)
         {

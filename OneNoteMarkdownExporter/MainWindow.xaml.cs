@@ -402,8 +402,12 @@ namespace OneNoteMarkdownExporter
 
                 var relativeAssetsPath = Path.GetRelativePath(folderPath, assetsRoot).Replace("\\", "/");
                 
+                // Create a binary content fetcher for images that aren't embedded
+                BinaryContentFetcher binaryFetcher = (callbackId) => _oneNoteService.GetBinaryPageContent(page.Id, callbackId);
+                
                 // Convert XML directly to Markdown (no Publish API needed)
-                var markdown = _xmlConverter.Convert(pageXml, assetsRoot, relativeAssetsPath);
+                // Use page name as prefix to avoid image filename collisions across pages
+                var markdown = _xmlConverter.Convert(pageXml, assetsRoot, relativeAssetsPath, binaryFetcher, page.Name);
                 
                 // Apply linting if enabled
                 if (applyLinting)
