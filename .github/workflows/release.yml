@@ -16,18 +16,25 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '10.0.x'
+        dotnet-version: '9.0.x'
 
-    - name: Restore dependencies
-      run: dotnet restore OneNoteMarkdownExporter/OneNoteMarkdownExporter.csproj
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
 
-    - name: Build and Publish
+    - name: Setup NuGet
+      uses: nuget/setup-nuget@v2
+
+    - name: Restore NuGet packages
+      run: nuget restore OneNoteMarkdownExporter/OneNoteMarkdownExporter.csproj
+
+    - name: Build and Publish with MSBuild
       run: |
-        dotnet publish OneNoteMarkdownExporter/OneNoteMarkdownExporter.csproj `
-          -c Release `
-          -r win-x64 `
-          --self-contained true `
-          -o ./publish
+        msbuild OneNoteMarkdownExporter/OneNoteMarkdownExporter.csproj `
+          /t:Publish `
+          /p:Configuration=Release `
+          /p:RuntimeIdentifier=win-x64 `
+          /p:SelfContained=true `
+          /p:PublishDir=..\publish\
 
     - name: Create release zip
       run: |
