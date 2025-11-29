@@ -80,9 +80,9 @@ OneNoteMarkdownExporter.exe --help
 | Option | Description |
 |--------|-------------|
 | `--all` | Export all notebooks |
-| `--notebook <name>` | Export specific notebook by name (repeatable) |
-| `--section <path>` | Export section by path, e.g., `"Notebook/Section"` (repeatable) |
-| `--page <id>` | Export page by OneNote ID (repeatable) |
+| `--notebook <name>` | Export specific notebook by name |
+| `--section <path>` | Export section by path, e.g., `"Notebook/Section"` |
+| `--page <id>` | Export page by OneNote ID |
 
 #### Output
 
@@ -111,7 +111,7 @@ OneNoteMarkdownExporter.exe --help
 ### CLI Examples
 
 ```powershell
-# List all notebooks and their structure (useful for discovering page IDs)
+# List all notebooks and their structure
 OneNoteMarkdownExporter.exe --list
 
 # List with verbose mode to see page IDs
@@ -191,17 +191,17 @@ Click "Edit .markdownlint.json..." in the UI or find the file in the `resources`
 
 ## Why I Built This
 
-I hate OneNote. I have only ever used it in cases where I was grandfathered into it. Meaning, the program I was in at school, or the team I was on at work, already used it, so I had to play along. The day I learned about Markdown (shout out to the team [Farm Credit Services of America](https://www.fcsamerica.com/), my first internship), I resolved to do everything I could to never touch OneNote or similar "vendor lock-in" proprietary note taking tools again.
+I hate OneNote. I've only ever used it in cases where I was grandfathered into it. Meaning, the program I was in at school, or the team I was on at work, already used it, so I had to play along. The day I learned about Markdown (shout out to the team at [Farm Credit Services of America](https://www.fcsamerica.com/), my first internship that taught me real world software development, and a love of markdown), I resolved to do everything I could to never touch OneNote or similar "vendor lock-in" proprietary note taking tools again.
 
-That decision, given the rise of AI and how easily it works with and prefers Markdown, has never looked better. I had some legacy OneNotes I inherited at work that were chock full of domain knowledge, truly rich content, scattered across sections and pages and impossible to easily parse through. To enable [Retrieval Augmented Generation](https://en.wikipedia.org/wiki/Retrieval-augmented_generation) over that information, I wanted to export it to Markdown. I tried all sorts of solutions and hit roadblock after roadblock.
+That decision, given the rise of AI and how easily it works with and prefers Markdown, has never looked better. I had some legacy OneNotes I inherited at work that were chock full of domain knowledge scattered across sections and pages and impossible to easily parse through. To enable [Retrieval Augmented Generation](https://en.wikipedia.org/wiki/Retrieval-augmented_generation) over that information, I wanted to export it to Markdown. I tried all sorts of solutions and hit roadblock after roadblock.
 
 ### Other Solutions
 
-1. **[ConvertOneNote2MarkDown](https://github.com/theohbrothers/ConvertOneNote2MarkDown):** PowerShell script that uses OneNote's [`Publish()`](https://learn.microsoft.com/en-us/office/client-developer/onenote/application-interface-onenote#publish-method) method to export pages as Word documents (.docx), then converts them to Markdown using Pandoc. Doesn't work when [Data Loss Prevention](https://learn.microsoft.com/en-us/purview/dlp-learn-about-dlp) policies are enabled because `Publish()` writes files to disk.
+1. **[ConvertOneNote2MarkDown](https://github.com/theohbrothers/ConvertOneNote2MarkDown):** PowerShell script that uses OneNote's [`Publish()`](https://learn.microsoft.com/en-us/office/client-developer/onenote/application-interface-onenote#publish-method) method to export pages as Word documents (.docx), then converts them to Markdown using Pandoc. Doesn't work when [Data Loss Prevention](https://learn.microsoft.com/en-us/purview/dlp-learn-about-dlp) policies are enabled because [`Publish()`](https://learn.microsoft.com/en-us/office/client-developer/onenote/application-interface-onenote#publish-method) writes files to disk. Something about DLP blow up any attempt using [`Publish()`](https://learn.microsoft.com/en-us/office/client-developer/onenote/application-interface-onenote#publish-method) to save a file thereafter.
 
 2. **[ConvertOneNote2MarkDown](https://github.com/SjoerdV/ConvertOneNote2MarkDown):** The original version of the above. Same [`Publish()`](https://learn.microsoft.com/en-us/office/client-developer/onenote/application-interface-onenote#publish-method) to Word then Pandoc approach, same [Data Loss Prevention](https://learn.microsoft.com/en-us/purview/dlp-learn-about-dlp) issues.
 
-3. **[onenote_to_markdown](https://github.com/Ben-Gillman/onenote_to_markdown):** A simple Python script that converts manually copy-pasted text from OneNote into Markdown. Requires you to manually select and copy all notes, save them as text files, then run the script. Not automated and loses formatting/images.
+3. **[onenote_to_markdown](https://github.com/Ben-Gillman/onenote_to_markdown):** A Python script that converts manually copy-pasted text from OneNote into Markdown. Requires you to manually select and copy all notes, save them as text files, then run the script. Not automated and loses formatting/images.
 
 4. **[OneNote Export Gist](https://gist.github.com/heardk/ded40b72056cee33abb18f3724e0a580):** A manual workflow where you export pages to .docx using OneNote's File > Export menu, then use Pandoc commands to convert to Markdown. Not automated, requires manual export of each page.
 
