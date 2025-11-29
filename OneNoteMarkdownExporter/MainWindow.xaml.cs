@@ -6,7 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Forms; // For FolderBrowserDialog
+using System.Windows.Forms;
 using OneNoteMarkdownExporter.Models;
 using OneNoteMarkdownExporter.Services;
 
