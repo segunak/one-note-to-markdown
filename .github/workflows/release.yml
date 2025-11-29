@@ -2,16 +2,53 @@ name: Build and Release
 
 on:
   push:
-    tags:
-      - 'v*'  # Triggers on version tags like v1.0.0, v2.1.3, etc.
+    branches:
+      - master
+    paths:
+      - 'OneNoteMarkdownExporter/**'  # Only trigger when source code changes
+      - '!OneNoteMarkdownExporter/bin/**'
+      - '!OneNoteMarkdownExporter/obj/**'
 
 jobs:
-  build:
+  build-and-release:
     runs-on: windows-latest
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for tags
+
+    - name: Get latest tag and increment version
+      id: version
+      shell: pwsh
+      run: |
+        # Get the latest tag
+        $latestTag = git describe --tags --abbrev=0 2>$null
+        
+        if (-not $latestTag) {
+          # No tags exist, start at v1.0.0
+          $newVersion = "v1.0.0"
+        } else {
+          # Parse the version (assumes vX.Y.Z format)
+          $version = $latestTag -replace '^v', ''
+          $parts = $version -split '\.'
+          
+          $major = [int]$parts[0]
+          $minor = [int]$parts[1]
+          $patch = [int]$parts[2]
+          
+          # Increment patch version
+          $patch++
+          
+          $newVersion = "v$major.$minor.$patch"
+        }
+        
+        Write-Host "Latest tag: $latestTag"
+        Write-Host "New version: $newVersion"
+        
+        echo "version=$newVersion" >> $env:GITHUB_OUTPUT
+        echo "latest=$latestTag" >> $env:GITHUB_OUTPUT
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
@@ -43,14 +80,21 @@ jobs:
         Copy-Item -Recurse ./publish/resources ./release/resources
         
         # Create the zip
-        Compress-Archive -Path ./release/* -DestinationPath ./OneNoteMarkdownExporter-${{ github.ref_name }}.zip
+        Compress-Archive -Path ./release/* -DestinationPath ./OneNoteMarkdownExporter-${{ steps.version.outputs.version }}.zip
+
+    - name: Create tag
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag ${{ steps.version.outputs.version }}
+        git push origin ${{ steps.version.outputs.version }}
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        files: OneNoteMarkdownExporter-${{ github.ref_name }}.zip
+        tag_name: ${{ steps.version.outputs.version }}
+        files: OneNoteMarkdownExporter-${{ steps.version.outputs.version }}.zip
         generate_release_notes: true
         draft: false
-        prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
