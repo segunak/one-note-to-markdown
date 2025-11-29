@@ -9,9 +9,6 @@ on:
       - '!OneNoteMarkdownExporter/bin/**'
       - '!OneNoteMarkdownExporter/obj/**'
 
-permissions:
-  contents: write
-
 jobs:
   build-and-release:
     runs-on: windows-latest
