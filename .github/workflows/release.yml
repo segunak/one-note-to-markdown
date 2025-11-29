@@ -5,9 +5,15 @@ on:
     branches:
       - master
     paths:
-      - 'OneNoteMarkdownExporter/**'  # Only trigger when source code changes
+      - 'OneNoteMarkdownExporter/**'  # Trigger when main source code changes
+      - 'OneNoteMarkdownExporter.Tests/**'  # Also trigger when tests change
       - '!OneNoteMarkdownExporter/bin/**'
       - '!OneNoteMarkdownExporter/obj/**'
+      - '!OneNoteMarkdownExporter.Tests/bin/**'
+      - '!OneNoteMarkdownExporter.Tests/obj/**'
+
+permissions:
+  contents: write
 
 jobs:
   build-and-release:
@@ -53,15 +59,18 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.0.x'
+        dotnet-version: '10.0.x'
 
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
     - name: Restore NuGet packages
-      run: dotnet restore OneNoteMarkdownExporter/OneNoteMarkdownExporter.csproj
+      run: dotnet restore
 
-    - name: Build and Publish with MSBuild
+    - name: Build and run tests
+      run: dotnet test --verbosity normal --configuration Release
+
+    - name: Publish with MSBuild
       run: |
         msbuild OneNoteMarkdownExporter/OneNoteMarkdownExporter.csproj `
           /t:Publish `

@@ -2,14 +2,18 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
-    <!-- Self-contained deployment - users don't need .NET installed -->
+    <!-- RuntimeIdentifiers for publish - not set by default to allow normal build/test -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <!-- Publish-time settings for self-contained deployment -->
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true' Or '$(Configuration)' == 'Release'">
     <SelfContained>true</SelfContained>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
@@ -18,7 +22,7 @@
     <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
     <PackageReference Include="ReverseMarkdown" Version="4.7.1" />
     <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
-    <!-- Add Interop package for build servers where OneNote isn't installed -->
+    <!-- Use Interop NuGet package - works on build servers and for testing -->
     <PackageReference Include="Interop.Microsoft.Office.Interop.OneNote" Version="1.1.0.2" />
   </ItemGroup>
 
@@ -30,7 +34,13 @@
     </None>
   </ItemGroup>
 
-  <ItemGroup Condition="Exists('C:\Program Files\Microsoft Office\root\Office16\ONENOTE.EXE')">
+  <!-- 
+    COMReference is only needed for generating new interop assemblies from locally installed OneNote.
+    For normal builds and tests, we use the NuGet package above.
+    To regenerate: Use Visual Studio with .NET Framework MSBuild target or msbuild.exe.
+  -->
+  <!--
+  <ItemGroup Condition="false">
     <COMReference Include="Microsoft.Office.Interop.OneNote">
       <Guid>{0EA692EE-BB50-4E3C-AEF0-356D91732725}</Guid>
       <VersionMajor>1</VersionMajor>
@@ -41,5 +51,6 @@
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </COMReference>
   </ItemGroup>
+  -->
 
 </Project>
