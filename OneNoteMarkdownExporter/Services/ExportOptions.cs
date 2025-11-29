@@ -19,26 +19,16 @@ namespace OneNoteMarkdownExporter.Services
         public bool Overwrite { get; set; } = false;
 
         /// <summary>
-        /// If true, apply Markdown linting/formatting to exported content.
+        /// If true, apply Markdown linting/formatting to exported content using markdownlint-cli.
+        /// Linting errors are logged but do not prevent export.
         /// </summary>
         public bool ApplyLinting { get; set; } = true;
 
         /// <summary>
-        /// If true, use markdownlint-cli. If false, use the built-in C# linter.
-        /// Only relevant when ApplyLinting is true.
-        /// </summary>
-        public bool UseMarkdownCliLinter { get; set; } = false;
-
-        /// <summary>
-        /// Path to custom .markdownlint.json config file (for CLI linter).
+        /// Path to custom .markdownlint.json config file.
         /// If null/empty, uses the default bundled config.
         /// </summary>
         public string? LintConfigPath { get; set; }
-
-        /// <summary>
-        /// Options for the built-in linter. If null, uses defaults.
-        /// </summary>
-        public LintOptions? BuiltInLintOptions { get; set; }
 
         // Selection options - at least one should be set for CLI mode
 
@@ -85,9 +75,7 @@ namespace OneNoteMarkdownExporter.Services
             return new ExportOptions
             {
                 ApplyLinting = true,
-                UseMarkdownCliLinter = false,
-                Overwrite = false,
-                BuiltInLintOptions = LintOptions.CreateDefault()
+                Overwrite = false
             };
         }
 

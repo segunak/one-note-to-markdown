@@ -6,7 +6,13 @@ A Windows desktop application that exports Microsoft OneNote notebooks, sections
 
 ## Download
 
-Go to [GitHub Releases](https://github.com/segunak/one-note-to-markdown/releases) to download the latest version. Just grab the `.exe`, run it, and you're good to go.
+Go to [GitHub Releases](https://github.com/segunak/one-note-to-markdown/releases) to download the latest version.
+
+1. Download the `.zip` file from the latest release
+2. Extract the folder (it contains the `.exe` and a `resources` folder)
+3. Run `OneNoteMarkdownExporter.exe`
+
+> **Important:** Keep the `resources` folder in the same directory as the `.exe`. It contains the bundled Node.js runtime and markdownlint-cli needed for Markdown linting.
 
 ## Requirements
 
@@ -22,8 +28,7 @@ Go to [GitHub Releases](https://github.com/segunak/one-note-to-markdown/releases
 - **Clean Markdown output** - Proper formatting, no leftover HTML tags
 - **Image extraction** - Embedded images saved to an `assets` folder with relative paths
 - **Sync-friendly** - "Overwrite existing files" option keeps exports in sync with your notes
-- **Built-in Markdown linting** - Automatic cleanup with configurable rules
-- **Bundled markdownlint-cli** - Full 50+ rule linting experience, no installation required
+- **Markdown linting** - Automatic cleanup via bundled markdownlint-cli (configurable)
 
 ## Usage
 
@@ -47,8 +52,7 @@ Double-click `OneNoteMarkdownExporter.exe` to launch the graphical interface.
 3. **Choose an output directory** - Defaults to `Downloads\OneNoteExport`
 4. **Configure options**:
    - **Overwrite existing files** - Enable this for ongoing syncing
-   - **Apply Markdown formatting rules** - Cleans up the output
-   - Pick **Built-in linter** or **markdownlint-cli**
+   - **Apply Markdown linting** - Cleans up the output (can be toggled off)
 5. **Click Start Export**
 
 ## CLI Mode
@@ -91,8 +95,7 @@ OneNoteMarkdownExporter.exe --help
 
 | Option | Description |
 |--------|-------------|
-| `--no-lint` | Disable Markdown linting entirely |
-| `--use-markdown-cli-linter` | Use markdownlint-cli (with `--fix`) instead of built-in linter |
+| `--no-lint` | Disable Markdown linting (markdownlint-cli) |
 | `--lint-config <path>` | Path to custom `.markdownlint.json` configuration file |
 
 #### Utility
@@ -126,9 +129,6 @@ OneNoteMarkdownExporter.exe --section "Work Notes/Meeting Notes"
 # Export everything, overwrite existing, skip linting
 OneNoteMarkdownExporter.exe --all --overwrite --no-lint
 
-# Export with markdownlint-cli for comprehensive linting
-OneNoteMarkdownExporter.exe --all --use-markdown-cli-linter
-
 # Quiet mode for scheduled tasks (only shows errors)
 OneNoteMarkdownExporter.exe --all --quiet --overwrite
 
@@ -138,35 +138,15 @@ OneNoteMarkdownExporter.exe --all --output "D:\Backups\OneNote" --verbose --over
 
 ## Markdown Linting
 
-The app includes two linting options. Both work out of the box with no additional setup.
+The app uses [markdownlint-cli](https://github.com/DavidAnson/markdownlint-cli) for Markdown linting. Node.js and all dependencies are bundled, so it works out of the box with no additional setup.
 
-### Built-in Linter
+- **Enabled by default** - Can be toggled off in the UI or with `--no-lint` in CLI
+- **Non-blocking** - If linting fails, the error is logged and export continues with the unlinted content
+- **Configurable** - Edit `.markdownlint.json` to customize rules
 
-A custom C# implementation covering the most common Markdown formatting rules:
+### Configuration
 
-| Rule | Description |
-|------|-------------|
-| MD004 | Consistent unordered list style (asterisks, dashes, etc.) |
-| MD007 | Proper list indentation |
-| MD009 | No trailing whitespace |
-| MD010 | No hard tabs (converts to spaces) |
-| MD012 | No multiple consecutive blank lines |
-| MD018/19/21/23 | Heading formatting consistency |
-| MD027 | No multiple spaces after blockquote symbol |
-| MD030 | List marker spacing |
-| MD032 | Blank lines around lists |
-| MD034 | No bare URLs |
-| MD037/38/39 | No spaces inside emphasis/code markers |
-| MD047 | Files end with a newline |
-| MD055/56 | Table cell padding and alignment |
-
-### markdownlint-cli
-
-The full [markdownlint-cli](https://github.com/DavidAnson/markdownlint-cli) experience with 50+ rules. The app bundles Node.js and all dependencies, so just select it and it works.
-
-#### markdownlint-cli Configuration
-
-The `.markdownlint.json` file controls which rules are applied:
+Click "Edit .markdownlint.json..." in the UI or find the file in the `resources` folder. The default configuration:
 
 ```json
 {

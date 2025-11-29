@@ -16,22 +16,12 @@ namespace OneNoteMarkdownExporter.Services
     {
         private readonly OneNoteService _oneNoteService;
         private readonly OneNoteXmlToMarkdownConverter _xmlConverter;
-        private readonly MarkdownLinter _builtInLinter;
         private readonly MarkdownLintCliService _cliLinter;
 
         public ExportService()
         {
             _oneNoteService = new OneNoteService();
             _xmlConverter = new OneNoteXmlToMarkdownConverter();
-            _builtInLinter = new MarkdownLinter();
-            _cliLinter = new MarkdownLintCliService();
-        }
-
-        public ExportService(LintOptions? lintOptions)
-        {
-            _oneNoteService = new OneNoteService();
-            _xmlConverter = new OneNoteXmlToMarkdownConverter();
-            _builtInLinter = new MarkdownLinter(lintOptions ?? LintOptions.CreateDefault());
             _cliLinter = new MarkdownLintCliService();
         }
 
@@ -79,12 +69,6 @@ namespace OneNoteMarkdownExporter.Services
                 if (!Directory.Exists(options.OutputPath))
                 {
                     Directory.CreateDirectory(options.OutputPath);
-                }
-
-                // Update linter options if provided
-                if (options.BuiltInLintOptions != null)
-                {
-                    _builtInLinter.Options = options.BuiltInLintOptions;
                 }
 
                 // Get notebook hierarchy
@@ -154,13 +138,13 @@ namespace OneNoteMarkdownExporter.Services
 
             if (options.ApplyLinting)
             {
-                if (options.UseMarkdownCliLinter && _cliLinter.IsAvailable)
+                try
                 {
                     markdown = _cliLinter.LintContent(markdown);
                 }
-                else
+                catch
                 {
-                    markdown = _builtInLinter.Lint(markdown);
+                    // Linting failed, continue with unlinted content
                 }
             }
 
@@ -447,16 +431,17 @@ namespace OneNoteMarkdownExporter.Services
                 // Use page name as prefix to avoid image filename collisions across pages
                 var markdown = _xmlConverter.Convert(pageXml, assetsRoot, relativeAssetsPath, binaryFetcher, page.Name);
 
-                // Apply linting if enabled
+                // Apply linting if enabled (using markdownlint-cli)
                 if (options.ApplyLinting)
                 {
-                    if (options.UseMarkdownCliLinter && _cliLinter.IsAvailable)
+                    try
                     {
                         markdown = _cliLinter.LintContent(markdown);
                     }
-                    else
+                    catch (Exception lintEx)
                     {
-                        markdown = _builtInLinter.Lint(markdown);
+                        progress?.Report($"  Warning: Linting failed for '{page.Name}': {lintEx.Message}");
+                        // Continue with unlinted markdown
                     }
                 }
 

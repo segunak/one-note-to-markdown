@@ -1,0 +1,52 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v1.0.0, v2.1.3, etc.
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore OneNoteMarkdownExporter/OneNoteMarkdownExporter.csproj
+
+    - name: Build and Publish
+      run: |
+        dotnet publish OneNoteMarkdownExporter/OneNoteMarkdownExporter.csproj `
+          -c Release `
+          -r win-x64 `
+          --self-contained true `
+          -o ./publish
+
+    - name: Create release zip
+      run: |
+        # Create a clean release folder
+        New-Item -ItemType Directory -Path ./release -Force
+        
+        # Copy the exe and resources folder
+        Copy-Item ./publish/OneNoteMarkdownExporter.exe ./release/
+        Copy-Item -Recurse ./publish/resources ./release/resources
+        
+        # Create the zip
+        Compress-Archive -Path ./release/* -DestinationPath ./OneNoteMarkdownExporter-${{ github.ref_name }}.zip
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: OneNoteMarkdownExporter-${{ github.ref_name }}.zip
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

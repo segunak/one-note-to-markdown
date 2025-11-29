@@ -39,7 +39,7 @@ namespace OneNoteMarkdownExporter.Services
             var cliFlags = new[]
             {
                 "--all", "--notebook", "--section", "--page", "--output", "-o",
-                "--overwrite", "--no-lint", "--use-markdown-cli-linter", "--lint-config",
+                "--overwrite", "--no-lint", "--lint-config",
                 "--list", "--dry-run", "--verbose", "-v", "--quiet", "-q",
                 "--help", "-h", "-?", "--version"
             };
@@ -92,11 +92,7 @@ namespace OneNoteMarkdownExporter.Services
 
             var noLintOption = new Option<bool>(
                 "--no-lint",
-                "Disable Markdown linting");
-
-            var useCliLinterOption = new Option<bool>(
-                "--use-markdown-cli-linter",
-                "Use markdownlint-cli (with --fix) instead of built-in linter");
+                "Disable Markdown linting (markdownlint-cli)");
 
             var lintConfigOption = new Option<string?>(
                 "--lint-config",
@@ -126,7 +122,6 @@ namespace OneNoteMarkdownExporter.Services
             rootCommand.AddOption(outputOption);
             rootCommand.AddOption(overwriteOption);
             rootCommand.AddOption(noLintOption);
-            rootCommand.AddOption(useCliLinterOption);
             rootCommand.AddOption(lintConfigOption);
             rootCommand.AddOption(listOption);
             rootCommand.AddOption(dryRunOption);
@@ -146,7 +141,6 @@ namespace OneNoteMarkdownExporter.Services
                     OutputPath = result.GetValueForOption(outputOption) ?? ExportOptions.GetDefaultOutputPath(),
                     Overwrite = result.GetValueForOption(overwriteOption),
                     ApplyLinting = !result.GetValueForOption(noLintOption),
-                    UseMarkdownCliLinter = result.GetValueForOption(useCliLinterOption),
                     LintConfigPath = result.GetValueForOption(lintConfigOption),
                     DryRun = result.GetValueForOption(dryRunOption),
                     Verbose = result.GetValueForOption(verboseOption),
@@ -193,14 +187,6 @@ namespace OneNoteMarkdownExporter.Services
                     return 1;
                 }
 
-                // Check CLI linter availability
-                if (options.UseMarkdownCliLinter && !exportService.IsMarkdownCliLinterAvailable)
-                {
-                    Console.Error.WriteLine($"Warning: markdownlint-cli is unavailable: {exportService.MarkdownCliLinterUnavailableReason}");
-                    Console.Error.WriteLine("Falling back to built-in linter.");
-                    options.UseMarkdownCliLinter = false;
-                }
-
                 // Report configuration
                 if (!options.Quiet)
                 {
@@ -208,7 +194,7 @@ namespace OneNoteMarkdownExporter.Services
                     Console.WriteLine("============================");
                     Console.WriteLine($"Output directory: {options.OutputPath}");
                     Console.WriteLine($"Overwrite: {(options.Overwrite ? "Yes" : "No")}");
-                    Console.WriteLine($"Linting: {(options.ApplyLinting ? (options.UseMarkdownCliLinter ? "markdownlint-cli" : "Built-in") : "Disabled")}");
+                    Console.WriteLine($"Linting: {(options.ApplyLinting ? "Enabled (markdownlint-cli)" : "Disabled")}");
                     if (options.DryRun) Console.WriteLine("Mode: DRY RUN (no files will be created)");
                     Console.WriteLine();
                 }

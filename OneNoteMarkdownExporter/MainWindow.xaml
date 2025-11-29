@@ -47,25 +47,11 @@
             <CheckBox x:Name="ExpandCollapsedBox" Content="Try to expand collapsed paragraphs (Writable notebooks only)" IsChecked="True" Margin="0,0,0,5"/>
             <CheckBox x:Name="OverwriteExistingBox" Content="Overwrite existing files (keeps export in sync)" IsChecked="True" Margin="0,0,0,10"/>
             
-            <!-- Linting options -->
-            <CheckBox x:Name="LintMarkdownBox" Content="Apply Markdown formatting rules" IsChecked="True" Margin="0,0,0,5"/>
-            
-            <Grid Margin="20,0,0,5">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <RadioButton x:Name="UseBuiltInLinterRadio" Content="Built-in linter" IsChecked="True" 
-                             GroupName="LinterChoice" VerticalAlignment="Center" Checked="LinterChoice_Changed"/>
-                <RadioButton x:Name="UseMarkdownLintCliRadio" Content="markdownlint-cli" Grid.Column="1" 
-                             Margin="20,0,0,0" GroupName="LinterChoice" VerticalAlignment="Center" Checked="LinterChoice_Changed"/>
-                <TextBlock x:Name="MarkdownLintCliStatus" Grid.Column="2" Margin="10,0,0,0" 
-                           VerticalAlignment="Center" FontSize="11" Foreground="Gray"/>
-            </Grid>
+            <!-- Linting option - simple toggle -->
+            <CheckBox x:Name="LintMarkdownBox" Content="Apply Markdown linting (markdownlint-cli)" IsChecked="True" Margin="0,0,0,5"/>
             
             <StackPanel Orientation="Horizontal" Margin="20,0,0,10">
-                <Button x:Name="ConfigureLintingButton" Content="Configure Rules..." Click="ConfigureLinting_Click" 
+                <Button x:Name="ConfigureLintingButton" Content="Edit .markdownlint.json..." Click="ConfigureLinting_Click" 
                         Padding="8,2" FontSize="11"/>
             </StackPanel>
             
