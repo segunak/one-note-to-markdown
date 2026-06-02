@@ -46,6 +46,18 @@ namespace OneNoteMarkdownExporter.Services
 
         public string Convert(string pageXml, string assetsFolder, string relativeAssetsPath, BinaryContentFetcher? binaryContentFetcher = null, string? pagePrefix = null)
         {
+            return Convert(pageXml, assetsFolder, relativeAssetsPath, null, true, binaryContentFetcher, pagePrefix);
+        }
+
+        public string Convert(
+            string pageXml,
+            string assetsFolder,
+            string relativeAssetsPath,
+            DateTimeOffset? lastModifiedTime,
+            bool includeTimestamps,
+            BinaryContentFetcher? binaryContentFetcher = null,
+            string? pagePrefix = null)
+        {
             _assetsFolder = assetsFolder;
             _relativeAssetsPath = relativeAssetsPath;
             _pagePrefix = SanitizePrefix(pagePrefix);
@@ -68,6 +80,12 @@ namespace OneNoteMarkdownExporter.Services
                 {
                     htmlBuilder.AppendLine($"<h1>{System.Net.WebUtility.HtmlEncode(titleText.Trim())}</h1>");
                 }
+            }
+
+            if (includeTimestamps && lastModifiedTime.HasValue)
+            {
+                var formatted = FormatTimestamp(lastModifiedTime.Value);
+                htmlBuilder.AppendLine($"<p><em>Last modified: {System.Net.WebUtility.HtmlEncode(formatted)}</em></p>");
             }
 
             // Process all Outline elements (main content containers)
@@ -95,6 +113,15 @@ namespace OneNoteMarkdownExporter.Services
             markdown = CleanupMarkdown(markdown);
 
             return markdown;
+        }
+
+        /// <summary>
+        /// Formats a timestamp as ISO 8601 with the local time-zone offset,
+        /// e.g. <c>2024-01-15T14:30:00+03:00</c>.
+        /// </summary>
+        internal static string FormatTimestamp(DateTimeOffset value)
+        {
+            return value.LocalDateTime.ToString("yyyy-MM-ddTHH:mm:sszzz", System.Globalization.CultureInfo.InvariantCulture);
         }
 
         private static string SanitizePrefix(string? prefix)

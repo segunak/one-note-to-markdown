@@ -472,6 +472,127 @@ public class OneNoteXmlToMarkdownConverterTests
 
     #endregion
 
+    #region Timestamp Tests
+
+    [Fact]
+    public void Convert_WithLastModifiedTime_EmitsItalicLineAfterTitle()
+    {
+        // Arrange
+        var xml = @"<?xml version=""1.0""?>
+            <one:Page xmlns:one=""http://schemas.microsoft.com/office/onenote/2013/onenote"">
+                <one:Title>
+                    <one:OE><one:T><![CDATA[My Page]]></one:T></one:OE>
+                </one:Title>
+                <one:Outline>
+                    <one:OEChildren>
+                        <one:OE><one:T><![CDATA[Body text]]></one:T></one:OE>
+                    </one:OEChildren>
+                </one:Outline>
+            </one:Page>";
+        var lastModified = new DateTimeOffset(2024, 1, 15, 14, 30, 0, TimeSpan.FromHours(3));
+
+        // Act
+        var result = _converter.Convert(xml, "", "assets", lastModified, true, null, "test");
+
+        // Assert
+        result.Should().Contain("# My Page");
+        result.Should().Contain("*Last modified: 2024-01-15T14:30:00+03:00*");
+        // Timestamp line should appear between the title and the body
+        var titleIndex = result.IndexOf("# My Page", StringComparison.Ordinal);
+        var timestampIndex = result.IndexOf("Last modified", StringComparison.Ordinal);
+        var bodyIndex = result.IndexOf("Body text", StringComparison.Ordinal);
+        titleIndex.Should().BeLessThan(timestampIndex);
+        timestampIndex.Should().BeLessThan(bodyIndex);
+    }
+
+    [Fact]
+    public void Convert_WithoutLastModifiedTime_DoesNotEmitItalicLine()
+    {
+        // Arrange
+        var xml = @"<?xml version=""1.0""?>
+            <one:Page xmlns:one=""http://schemas.microsoft.com/office/onenote/2013/onenote"">
+                <one:Title>
+                    <one:OE><one:T><![CDATA[My Page]]></one:T></one:OE>
+                </one:Title>
+                <one:Outline>
+                    <one:OEChildren>
+                        <one:OE><one:T><![CDATA[Body text]]></one:T></one:OE>
+                    </one:OEChildren>
+                </one:Outline>
+            </one:Page>";
+
+        // Act
+        var result = _converter.Convert(xml, "", "assets", null, true, null, "test");
+
+        // Assert
+        result.Should().NotContain("Last modified");
+    }
+
+    [Fact]
+    public void Convert_IncludeTimestampsFalse_SkipsItalicEvenWhenTimestampPresent()
+    {
+        // Arrange
+        var xml = @"<?xml version=""1.0""?>
+            <one:Page xmlns:one=""http://schemas.microsoft.com/office/onenote/2013/onenote"">
+                <one:Title>
+                    <one:OE><one:T><![CDATA[My Page]]></one:T></one:OE>
+                </one:Title>
+                <one:Outline>
+                    <one:OEChildren>
+                        <one:OE><one:T><![CDATA[Body]]></one:T></one:OE>
+                    </one:OEChildren>
+                </one:Outline>
+            </one:Page>";
+        var lastModified = new DateTimeOffset(2024, 1, 15, 14, 30, 0, TimeSpan.FromHours(0));
+
+        // Act
+        var result = _converter.Convert(xml, "", "assets", lastModified, false, null, "test");
+
+        // Assert
+        result.Should().NotContain("Last modified");
+    }
+
+    [Fact]
+    public void Convert_FormatsTimestampAsLocalIso8601WithOffset()
+    {
+        // Arrange
+        var xml = CreatePageXml(@"<one:T><![CDATA[Content]]></one:T>");
+        // A fixed UTC instant; the rendered string should reflect the *local* time at that instant plus the local offset.
+        var utcInstant = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        var expected = utcInstant.LocalDateTime.ToString("yyyy-MM-ddTHH:mm:sszzz", System.Globalization.CultureInfo.InvariantCulture);
+
+        // Act
+        var result = _converter.Convert(xml, "", "assets", utcInstant, true, null, "test");
+
+        // Assert
+        result.Should().Contain($"*Last modified: {expected}*");
+    }
+
+    [Fact]
+    public void Convert_LegacyOverload_DefaultsToIncludeTimestampsWithoutValue()
+    {
+        // Arrange - legacy 5-arg overload is preserved (no timestamp) and should not emit the italic line.
+        var xml = @"<?xml version=""1.0""?>
+            <one:Page xmlns:one=""http://schemas.microsoft.com/office/onenote/2013/onenote"">
+                <one:Title>
+                    <one:OE><one:T><![CDATA[My Page]]></one:T></one:OE>
+                </one:Title>
+                <one:Outline>
+                    <one:OEChildren>
+                        <one:OE><one:T><![CDATA[Body]]></one:T></one:OE>
+                    </one:OEChildren>
+                </one:Outline>
+            </one:Page>";
+
+        // Act
+        var result = _converter.Convert(xml, "", "assets", null, "test");
+
+        // Assert
+        result.Should().NotContain("Last modified");
+    }
+
+    #endregion
+
     #region Helper Methods
 
     /// <summary>

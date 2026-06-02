@@ -114,4 +114,82 @@ public class OneNoteServiceTests
         pages.Should().ContainSingle().Which.Name.Should().Be("First Page");
         first.Children.Should().ContainSingle().Which.Name.Should().Be("Child Page");
     }
+
+    [Fact]
+    public void ParseHierarchyXml_ReadsLastModifiedTimeAttribute()
+    {
+        // Arrange
+        var xml = """
+            <one:Notebooks xmlns:one="http://schemas.microsoft.com/office/onenote/2013/onenote">
+              <one:Notebook ID="notebook-id" name="Notebook" lastModifiedTime="2024-01-15T14:30:00Z">
+                <one:Section ID="section-id" name="Section" lastModifiedTime="2024-02-20T09:15:00Z">
+                  <one:Page ID="page-id" name="Page" lastModifiedTime="2024-03-10T18:45:30.123Z" />
+                </one:Section>
+              </one:Notebook>
+            </one:Notebooks>
+            """;
+
+        // Act
+        var notebooks = OneNoteService.ParseHierarchyXml(xml);
+
+        // Assert
+        var notebook = notebooks.Single();
+        notebook.LastModifiedTime.Should().NotBeNull();
+        notebook.LastModifiedTime!.Value.UtcDateTime.Should().Be(new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Utc));
+
+        var section = notebook.Children.Single();
+        section.LastModifiedTime.Should().NotBeNull();
+        section.LastModifiedTime!.Value.UtcDateTime.Should().Be(new DateTime(2024, 2, 20, 9, 15, 0, DateTimeKind.Utc));
+
+        var page = section.Children.Single();
+        page.LastModifiedTime.Should().NotBeNull();
+        page.LastModifiedTime!.Value.UtcDateTime.Should().Be(new DateTime(2024, 3, 10, 18, 45, 30, 123, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void ParseHierarchyXml_MissingLastModifiedTimeAttribute_LeavesNull()
+    {
+        // Arrange
+        var xml = """
+            <one:Notebooks xmlns:one="http://schemas.microsoft.com/office/onenote/2013/onenote">
+              <one:Notebook ID="notebook-id" name="Notebook">
+                <one:Section ID="section-id" name="Section">
+                  <one:Page ID="page-id" name="Page" />
+                </one:Section>
+              </one:Notebook>
+            </one:Notebooks>
+            """;
+
+        // Act
+        var notebooks = OneNoteService.ParseHierarchyXml(xml);
+
+        // Assert
+        notebooks.Single().LastModifiedTime.Should().BeNull();
+        notebooks.Single().Children.Single().LastModifiedTime.Should().BeNull();
+        notebooks.Single().Children.Single().Children.Single().LastModifiedTime.Should().BeNull();
+    }
+
+    [Fact]
+    public void ParseHierarchyXml_InvalidLastModifiedTimeValue_LeavesNull()
+    {
+        // Arrange
+        var xml = """
+            <one:Notebooks xmlns:one="http://schemas.microsoft.com/office/onenote/2013/onenote">
+              <one:Notebook ID="notebook-id" name="Notebook" lastModifiedTime="not-a-date">
+                <one:Section ID="section-id" name="Section" lastModifiedTime="2024-02-20T09:15:00Z">
+                  <one:Page ID="page-id" name="Page" lastModifiedTime="garbage" />
+                </one:Section>
+              </one:Notebook>
+            </one:Notebooks>
+            """;
+
+        // Act
+        var notebooks = OneNoteService.ParseHierarchyXml(xml);
+
+        // Assert
+        var notebook = notebooks.Single();
+        notebook.LastModifiedTime.Should().BeNull();
+        notebook.Children.Single().LastModifiedTime.Should().NotBeNull();
+        notebook.Children.Single().Children.Single().LastModifiedTime.Should().BeNull();
+    }
 }

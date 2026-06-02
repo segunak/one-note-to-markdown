@@ -74,6 +74,14 @@ namespace OneNoteMarkdownExporter.Services
         public bool Quiet { get; set; } = false;
 
         /// <summary>
+        /// If true, include the OneNote page's last-modified timestamp both as an
+        /// italic line near the top of the exported Markdown and as the file's
+        /// last-write time. When false, the timestamp is omitted and the file
+        /// retains the export time.
+        /// </summary>
+        public bool IncludeTimestamps { get; set; } = true;
+
+        /// <summary>
         /// Creates default export options.
         /// </summary>
         public static ExportOptions CreateDefault()
@@ -81,7 +89,8 @@ namespace OneNoteMarkdownExporter.Services
             return new ExportOptions
             {
                 ApplyLinting = true,
-                Overwrite = false
+                Overwrite = false,
+                IncludeTimestamps = true
             };
         }
 

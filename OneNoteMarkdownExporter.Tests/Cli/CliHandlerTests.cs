@@ -315,6 +315,32 @@ public class CliHandlerTests
         result.Should().BeTrue();
     }
 
+    [Fact]
+    public void ShouldRunCli_WithNoTimestampsFlag_ReturnsTrue()
+    {
+        // Arrange
+        var args = new[] { "--no-timestamps" };
+
+        // Act
+        var result = CliHandler.ShouldRunCli(args);
+
+        // Assert
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ShouldRunCli_WithNoTimestampsFlagCombinedWithOthers_ReturnsTrue()
+    {
+        // Arrange
+        var args = new[] { "--all", "--no-timestamps", "--overwrite" };
+
+        // Act
+        var result = CliHandler.ShouldRunCli(args);
+
+        // Assert
+        result.Should().BeTrue();
+    }
+
     #endregion
 
     #region Case Sensitivity Tests

@@ -36,6 +36,7 @@ Go to [GitHub Releases](https://github.com/segunak/one-note-to-markdown/releases
 - **Image extraction** - Embedded images saved to a configurable assets folder with relative paths
 - **Sync-friendly** - "Overwrite existing files" option keeps exports in sync with your notes
 - **Markdown linting** - Automatic cleanup via bundled markdownlint-cli (configurable)
+- **Note timestamps** - Each page is exported with its OneNote last-modified date and the file's modified time is set to match (toggleable)
 
 ## Usage
 
@@ -61,6 +62,7 @@ Double-click `OneNoteMarkdownExporter.exe` to launch the graphical interface.
 5. **Configure options**:
    - **Overwrite existing files** - Enable this for ongoing syncing
    - **Apply Markdown linting** - Cleans up the output (can be toggled off)
+   - **Include note last-modified timestamp** - Adds an italic line with the OneNote last-modified date and syncs the exported file's modified time to the same instant (can be toggled off)
 6. **Click Start Export**
 
 ## CLI Mode
@@ -110,6 +112,12 @@ OneNoteMarkdownExporter.exe --help
 | `--no-lint` | Disable Markdown linting (markdownlint-cli) |
 | `--lint-config <path>` | Path to custom `.markdownlint.json` configuration file |
 
+#### Timestamps
+
+| Option | Description |
+|--------|-------------|
+| `--no-timestamps` | Skip the OneNote last-modified timestamp in the exported Markdown and do not sync the file's modified time |
+
 #### Utility
 
 | Option | Description |
@@ -140,6 +148,9 @@ OneNoteMarkdownExporter.exe --section "Work Notes/Meeting Notes"
 
 # Export everything, overwrite existing, skip linting
 OneNoteMarkdownExporter.exe --all --overwrite --no-lint
+
+# Export everything without including last-modified timestamps
+OneNoteMarkdownExporter.exe --all --no-timestamps
 
 # Quiet mode for scheduled tasks (only shows errors)
 OneNoteMarkdownExporter.exe --all --quiet --overwrite

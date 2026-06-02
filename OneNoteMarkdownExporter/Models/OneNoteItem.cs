@@ -33,6 +33,13 @@ namespace OneNoteMarkdownExporter.Models
         /// Only meaningful for pages; containers keep the default value.
         /// </summary>
         public int PageLevel { get; set; } = 0;
+
+        /// <summary>
+        /// Last-modified timestamp read from the OneNote hierarchy XML
+        /// (the <c>lastModifiedTime</c> attribute on the corresponding node).
+        /// Null when the attribute is absent or cannot be parsed.
+        /// </summary>
+        public DateTimeOffset? LastModifiedTime { get; set; }
         
         public bool IsExpanded 
         { 

@@ -66,6 +66,9 @@
                 <!-- Linting option - simple toggle -->
                 <CheckBox x:Name="LintMarkdownBox" Content="Apply Markdown linting (markdownlint-cli)" IsChecked="True" Margin="0,0,0,5"/>
 
+                <!-- Timestamps option -->
+                <CheckBox x:Name="IncludeTimestampsBox" Content="Include note last-modified timestamp (in file and on disk)" IsChecked="True" Margin="0,0,0,5"/>
+
                 <StackPanel Orientation="Horizontal" Margin="20,0,0,10">
                     <Button x:Name="ConfigureLintingButton" Content="Edit .markdownlint.json..." Click="ConfigureLinting_Click"
                             Padding="8,2" FontSize="11"/>

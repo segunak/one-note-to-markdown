@@ -57,7 +57,8 @@ namespace OneNoteMarkdownExporter.Services
                 Id = element.Attribute("ID")?.Value ?? "",
                 Name = element.Attribute("name")?.Value ?? "Untitled",
                 Type = itemType,
-                PageLevel = itemType == OneNoteItemType.Page ? ParsePageLevel(element) : 0
+                PageLevel = itemType == OneNoteItemType.Page ? ParsePageLevel(element) : 0,
+                LastModifiedTime = ParseLastModifiedTime(element)
             };
 
             var childItems = new List<OneNoteItem>();
@@ -71,6 +72,29 @@ namespace OneNoteMarkdownExporter.Services
 
             item.Children = BuildPageHierarchy(childItems);
             return item;
+        }
+
+        private static DateTimeOffset? ParseLastModifiedTime(XElement element)
+        {
+            var raw = element.Attributes()
+                .FirstOrDefault(attribute => attribute.Name.LocalName.Equals("lastModifiedTime", StringComparison.OrdinalIgnoreCase))
+                ?.Value;
+
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+
+            if (DateTimeOffset.TryParse(
+                    raw,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AllowWhiteSpaces,
+                    out var parsed))
+            {
+                return parsed;
+            }
+
+            return null;
         }
 
         public static List<OneNoteItem> BuildPageHierarchy(IEnumerable<OneNoteItem> items)

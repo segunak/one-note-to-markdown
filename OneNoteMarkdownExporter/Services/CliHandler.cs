@@ -39,7 +39,7 @@ namespace OneNoteMarkdownExporter.Services
             {
                 "--all", "--notebook", "--section", "--page", "--output", "-o",
                 "--assets-folder", "--overwrite", "--no-lint", "--lint-config",
-                "--list", "--dry-run", "--verbose", "-v", "--quiet", "-q",
+                "--no-timestamps", "--list", "--dry-run", "--verbose", "-v", "--quiet", "-q",
                 "--help", "-h", "-?", "--version"
             };
 
@@ -104,6 +104,11 @@ namespace OneNoteMarkdownExporter.Services
                 Description = "Path to custom markdownlint configuration file"
             };
 
+            var noTimestampsOption = new Option<bool>("--no-timestamps")
+            {
+                Description = "Do not include the OneNote page last-modified timestamp in the exported Markdown or file metadata"
+            };
+
             var listOption = new Option<bool>("--list")
             {
                 Description = "List available notebooks, sections, and pages without exporting"
@@ -134,6 +139,7 @@ namespace OneNoteMarkdownExporter.Services
             rootCommand.Options.Add(overwriteOption);
             rootCommand.Options.Add(noLintOption);
             rootCommand.Options.Add(lintConfigOption);
+            rootCommand.Options.Add(noTimestampsOption);
             rootCommand.Options.Add(listOption);
             rootCommand.Options.Add(dryRunOption);
             rootCommand.Options.Add(verboseOption);
@@ -152,6 +158,7 @@ namespace OneNoteMarkdownExporter.Services
                     Overwrite = result.GetValue(overwriteOption),
                     ApplyLinting = !result.GetValue(noLintOption),
                     LintConfigPath = result.GetValue(lintConfigOption),
+                    IncludeTimestamps = !result.GetValue(noTimestampsOption),
                     DryRun = result.GetValue(dryRunOption),
                     Verbose = result.GetValue(verboseOption),
                     Quiet = result.GetValue(quietOption)
@@ -205,6 +212,7 @@ namespace OneNoteMarkdownExporter.Services
                     Console.WriteLine($"Assets directory: {AssetPathResolver.ResolveAssetsFolderPath(options.OutputPath, options.AssetsFolderPath)}");
                     Console.WriteLine($"Overwrite: {(options.Overwrite ? "Yes" : "No")}");
                     Console.WriteLine($"Linting: {(options.ApplyLinting ? "Enabled (markdownlint-cli)" : "Disabled")}");
+                    Console.WriteLine($"Timestamps: {(options.IncludeTimestamps ? "Enabled" : "Disabled")}");
                     if (options.DryRun) Console.WriteLine("Mode: DRY RUN (no files will be created)");
                     Console.WriteLine();
                 }

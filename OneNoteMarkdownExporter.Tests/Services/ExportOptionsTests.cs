@@ -229,6 +229,26 @@ public class ExportOptionsTests
     }
 
     [Fact]
+    public void IncludeTimestamps_DefaultsToTrue()
+    {
+        // Arrange
+        var options = new ExportOptions();
+
+        // Assert
+        options.IncludeTimestamps.Should().BeTrue();
+    }
+
+    [Fact]
+    public void CreateDefault_IncludesTimestampsEnabled()
+    {
+        // Act
+        var options = ExportOptions.CreateDefault();
+
+        // Assert
+        options.IncludeTimestamps.Should().BeTrue();
+    }
+
+    [Fact]
     public void HasSelectionCriteria_WithMultipleCriteria_ReturnsTrue()
     {
         // Arrange

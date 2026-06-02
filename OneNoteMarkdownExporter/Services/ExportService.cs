@@ -424,7 +424,14 @@ namespace OneNoteMarkdownExporter.Services
 
                 // Convert XML directly to Markdown (no Publish API needed)
                 // Use page name as prefix to avoid image filename collisions across pages
-                var markdown = _xmlConverter.Convert(pageXml, assetsRoot, relativeAssetsPath, binaryFetcher, page.Name);
+                var markdown = _xmlConverter.Convert(
+                    pageXml,
+                    assetsRoot,
+                    relativeAssetsPath,
+                    page.LastModifiedTime,
+                    options.IncludeTimestamps,
+                    binaryFetcher,
+                    page.Name);
 
                 // Apply linting if enabled (using markdownlint-cli)
                 if (options.ApplyLinting)
@@ -441,6 +448,22 @@ namespace OneNoteMarkdownExporter.Services
                 }
 
                 File.WriteAllText(finalMdPath, markdown);
+
+                if (options.IncludeTimestamps && page.LastModifiedTime.HasValue)
+                {
+                    try
+                    {
+                        File.SetLastWriteTime(finalMdPath, page.LastModifiedTime.Value.LocalDateTime);
+                    }
+                    catch (Exception timeEx)
+                    {
+                        if (options.Verbose)
+                        {
+                            progress?.Report($"  Warning: Could not set last-write time for '{page.Name}': {timeEx.Message}");
+                        }
+                    }
+                }
+
                 result.ExportedPages++;
 
                 if (options.Verbose)
