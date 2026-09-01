@@ -10,10 +10,10 @@ Rules:
 - Only merges if truly adjacent (only whitespace between them)
 """
 
-import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
+import defusedxml.ElementTree as ET
 import defusedxml.minidom
 
 WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
