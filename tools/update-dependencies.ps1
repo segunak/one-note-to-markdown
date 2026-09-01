@@ -7,10 +7,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$expectedNodeVersion = "v26.5.0"
-$expectedNodeSha256 = "119D6FA70E6AE1B15B90688AB6BCC8E3A2819ACEA021AF196895CAB1843645AF"
-$expectedNodeLicenseSha256 = "D9C4EEDA951D6D08F4AA1316B61AAFCF67E6DA5F79B18F8EDEB56FA6ABDC038C"
-$expectedCliBanner = "markdownlint-cli2 v0.23.1 (markdownlint v0.41.1)"
+$expectedNodeVersion = "v26.8.1"
+$expectedNodeSha256 = "5CBA0EA928508C65DDADEFC0681D2FB6D95F1F3BEEA4428F04397631140EE8E5"
+$expectedNodeLicenseSha256 = "ED34DD8E3F0A78DBAF00D0444CE8E285B015B765379C2E17880455F70370F8E9"
+$expectedCliBanner = "markdownlint-cli2 v0.23.2 (markdownlint v0.41.1)"
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $resourcesPath = Join-Path $repositoryRoot "OneNoteMarkdownExporter\resources"

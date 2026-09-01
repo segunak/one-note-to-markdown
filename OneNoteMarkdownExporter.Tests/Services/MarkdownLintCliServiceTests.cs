@@ -38,7 +38,7 @@ namespace OneNoteMarkdownExporter.Tests.Services
             process.WaitForExit();
 
             process.ExitCode.Should().Be(0);
-            output.Trim().Should().Be("v26.5.0");
+            output.Trim().Should().Be("v26.8.1");
         }
 
         [Fact]
