@@ -454,6 +454,62 @@ public class ExportServiceTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExportSelectedAsync_WithLiteralTextHeadingsAndTables_PreservesContent(bool applyLinting)
+    {
+        var outputPath = CreateTempExportPath();
+        var source = new FakeOneNoteExportSource
+        {
+            PageXml = """
+                <one:Page xmlns:one="http://schemas.microsoft.com/office/onenote/2013/onenote">
+                  <one:Title><one:OE><one:T><![CDATA[Example]]></one:T></one:OE></one:Title>
+                  <one:Outline><one:OEChildren>
+                    <one:OE><one:T><![CDATA[[ENV][Component] (ENV)[Component]]]></one:T></one:OE>
+                    <one:OE><one:T><![CDATA[# comment]]></one:T></one:OE>
+                    <one:OE><one:T><![CDATA[-----------------------------]]></one:T></one:OE>
+                    <one:OE><one:T><![CDATA[<h1>Section</h1><h2>Child</h2>]]></one:T></one:OE>
+                    <one:OE><one:Table>
+                      <one:Row>
+                        <one:Cell><one:OEChildren><one:OE><one:T>Topic</one:T></one:OE></one:OEChildren></one:Cell>
+                        <one:Cell><one:OEChildren><one:OE><one:T>Details</one:T></one:OE></one:OEChildren></one:Cell>
+                      </one:Row>
+                      <one:Row>
+                        <one:Cell><one:OEChildren><one:OE><one:T>First</one:T></one:OE></one:OEChildren></one:Cell>
+                        <one:Cell><one:OEChildren><one:OE><one:T>a | b | c</one:T></one:OE></one:OEChildren></one:Cell>
+                        <one:Cell><one:OEChildren><one:OE><one:T>Last cell</one:T></one:OE></one:OEChildren></one:Cell>
+                      </one:Row>
+                    </one:Table></one:OE>
+                  </one:OEChildren></one:Outline>
+                </one:Page>
+                """
+        };
+        var service = new ExportService(source, new OneNoteXmlToMarkdownConverter(), new MarkdownLintCliService());
+        var options = new ExportOptions { OutputPath = outputPath, ApplyLinting = applyLinting, Overwrite = true };
+
+        try
+        {
+            var result = await service.ExportSelectedAsync(CreateSelectedHierarchy(), options);
+
+            result.Success.Should().BeTrue(result.Error);
+            result.ExportedPages.Should().Be(1);
+            result.Warnings.Should().BeEmpty();
+            var markdown = File.ReadAllText(Path.Combine(outputPath, "Project Notebook", "Meeting Notes", "Planning Page.md"));
+            markdown.Should().Contain(@"\[ENV\]\[Component\] (ENV)\[Component\]");
+            markdown.Should().Contain(@"\# comment");
+            markdown.Should().Contain(@"\-----------------------------");
+            markdown.Should().Contain("## Section").And.Contain("### Child");
+            markdown.Should().Contain(@"| First | a \| b \| c | Last cell |");
+            markdown.Split('\n').Count(line => line.StartsWith("# ")).Should().Be(1);
+            markdown.Should().NotContain("ONENOTELITERAL");
+        }
+        finally
+        {
+            if (Directory.Exists(outputPath)) Directory.Delete(outputPath, true);
+        }
+    }
+
     [Fact]
     public async Task ExportSelectedAsync_WithSelectedParentPage_ExportsParentAndSubpagesInNestedFolders()
     {

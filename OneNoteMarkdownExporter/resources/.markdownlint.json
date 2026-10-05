@@ -10,5 +10,6 @@
   "MD036": false,
   "MD049": false,
   "MD059": false,
-  "MD041": false
+  "MD041": false,
+  "MD060": { "style": "compact" }
 }

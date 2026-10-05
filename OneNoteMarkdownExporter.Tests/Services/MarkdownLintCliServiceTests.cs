@@ -233,6 +233,18 @@ namespace OneNoteMarkdownExporter.Tests.Services
             }
         }
 
+        [Fact]
+        public void LintContent_ShouldFixMixedTableSpacing_UsingCompactStyle()
+        {
+            var markdown = "| Long | Longer |\n| ---- | ------ |\n|  a  |  b  |\n";
+
+            var result = new MarkdownLintCliService().LintContent(markdown);
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.WarningMessage.Should().BeEmpty();
+            result.Content.Should().Be("| Long | Longer |\n| ---- | ------ |\n| a | b |\n");
+        }
+
         private static string GetResourcesPath()
         {
             return Path.Combine(AppContext.BaseDirectory, "resources");

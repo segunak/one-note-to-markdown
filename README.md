@@ -255,6 +255,10 @@ Folder names also reserve space for nested sections, subpages, and the selected 
 
 The app uses [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) for Markdown linting. Node.js and the CLI bundle are included, so it works out of the box with no additional setup.
 
+Conversion preserves literal brackets, Markdown-like text, and typed separator lines instead of interpreting them as links or formatting. Actual OneNote hyperlinks, formatting, and code remain functional. Necessary backslashes appear in Markdown source but not in the rendered text. These protections also apply when linting is disabled.
+
+The page title, or the first actual H1 when there is no title, remains the only H1. Later H1 sections and their subordinate headings move down one level, capped at H6, without dropping their text. Tables preserve literal pipes and pad shorter rows to the widest source row. Inline code containing pipes uses safe HTML within table cells.
+
 - **Enabled by default** - Can be toggled off in the UI or with `--no-lint` in CLI
 - **Non-blocking** - If linting fails, the error is logged and export continues with the unlinted content
 - **Configurable** - Edit the bundled `.markdownlint.json`, or pass another `.json` file with `--lint-config`
@@ -278,9 +282,12 @@ Only JSON rule configuration is supported. YAML, TOML, JavaScript configuration,
   "MD036": false,
   "MD049": false,
   "MD059": false,
-  "MD041": false
+  "MD041": false,
+  "MD060": { "style": "compact" }
 }
 ```
+
+MD060 uses compact table spacing so the bundled linter can automatically fix inconsistent padding without requiring aligned columns.
 
 | Rule | What It Does | Why It's Disabled |
 |------|--------------|-------------------|

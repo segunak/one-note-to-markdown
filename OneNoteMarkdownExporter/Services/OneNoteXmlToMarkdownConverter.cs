@@ -30,9 +30,8 @@ namespace OneNoteMarkdownExporter.Services
         private string _relativeAssetsPath = "";
         private string _pagePrefix = "";
         private int _imageCounter = 0;
-        private string _literalAnglePlaceholderPrefix = "";
-        private int _literalAnglePlaceholderCounter = 0;
-        private readonly Dictionary<string, string> _literalAnglePlaceholders = new();
+        private string _literalPlaceholderPrefix = "";
+        private readonly List<(string Token, string Markdown)> _literalPlaceholders = new();
         private BinaryContentFetcher? _binaryContentFetcher;
 
         public OneNoteXmlToMarkdownConverter()
@@ -42,7 +41,8 @@ namespace OneNoteMarkdownExporter.Services
                 UnknownTags = Config.UnknownTagsOption.Drop,
                 GithubFlavored = true,
                 RemoveComments = true,
-                SmartHrefHandling = true
+                SmartHrefHandling = true,
+                EscapeMarkdownLineStarts = true
             };
             _markdownConverter = new Converter(config);
         }
@@ -53,9 +53,8 @@ namespace OneNoteMarkdownExporter.Services
             _relativeAssetsPath = relativeAssetsPath;
             _pagePrefix = SanitizePrefix(pagePrefix);
             _imageCounter = 0;
-            _literalAnglePlaceholderPrefix = $"ONENOTELITERAL{Guid.NewGuid():N}";
-            _literalAnglePlaceholderCounter = 0;
-            _literalAnglePlaceholders.Clear();
+            _literalPlaceholderPrefix = $"ONENOTELITERAL{Guid.NewGuid():N}";
+            _literalPlaceholders.Clear();
             _binaryContentFetcher = binaryContentFetcher;
 
             var doc = XDocument.Parse(pageXml);
@@ -93,6 +92,7 @@ namespace OneNoteMarkdownExporter.Services
             // Get the HTML and normalize anchor tags BEFORE ReverseMarkdown processing
             var html = htmlBuilder.ToString();
             html = NormalizeHtmlAnchors(html);
+            html = NormalizeHtmlHeadings(html);
 
             // Convert HTML to Markdown using ReverseMarkdown library
             var markdown = _markdownConverter.Convert(html);
@@ -132,6 +132,33 @@ namespace OneNoteMarkdownExporter.Services
                 RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
             return html;
+        }
+
+        private static string NormalizeHtmlHeadings(string html)
+        {
+            var document = new HtmlAgilityPack.HtmlDocument();
+            document.LoadHtml(html);
+            var hasTopHeading = false;
+            var demoteSection = false;
+
+            foreach (var heading in document.DocumentNode.Descendants()
+                .Where(node => node.Name is "h1" or "h2" or "h3" or "h4" or "h5" or "h6")
+                .ToList())
+            {
+                var level = heading.Name[1] - '0';
+                if (level == 1)
+                {
+                    demoteSection = hasTopHeading;
+                    hasTopHeading = true;
+                }
+
+                if (demoteSection)
+                {
+                    heading.Name = $"h{Math.Min(6, level + 1)}";
+                }
+            }
+
+            return document.DocumentNode.InnerHtml;
         }
 
         private void ProcessOutline(XElement outline, StringBuilder html)
@@ -300,14 +327,14 @@ namespace OneNoteMarkdownExporter.Services
             }
         }
 
-        private string ProcessTextElement(XElement t)
+        private string ProcessTextElement(XElement t, bool inTable = false)
         {
             var cdata = t.Nodes().OfType<XCData>().FirstOrDefault();
             var rawText = cdata?.Value ?? t.Value;
 
             if (string.IsNullOrEmpty(rawText)) return "";
 
-            var html = ConvertOneNoteStylesToHtml(rawText);
+            var html = ConvertOneNoteStylesToHtml(rawText, inTable);
             var style = t.Attribute("style")?.Value ?? "";
 
             if (style.Contains("font-weight:bold"))
@@ -325,7 +352,7 @@ namespace OneNoteMarkdownExporter.Services
 
             return html;
         }
-        private string ConvertOneNoteStylesToHtml(string html)
+        private string ConvertOneNoteStylesToHtml(string html, bool inTable)
         {
             var fragment = new HtmlAgilityPack.HtmlDocument();
             fragment.LoadHtml(html);
@@ -373,24 +400,65 @@ namespace OneNoteMarkdownExporter.Services
                 }
             }
 
-            ProtectLiteralAngleBrackets(fragment);
+            ProtectLiteralText(fragment, inTable);
 
             return fragment.DocumentNode.InnerHtml;
         }
 
-        private void ProtectLiteralAngleBrackets(HtmlAgilityPack.HtmlDocument fragment)
+        private void ProtectLiteralText(HtmlAgilityPack.HtmlDocument fragment, bool inTable)
         {
+            foreach (var code in fragment.DocumentNode.Descendants()
+                .Where(node => node.Name is "code" or "pre"
+                    && !node.Ancestors().Any(ancestor => ancestor.Name is "code" or "pre"))
+                .ToList())
+            {
+                var codeText = HtmlEntity.DeEntitize(code.InnerText);
+                var markdown = inTable && (codeText.Contains('|') || code.Name == "pre")
+                    ? GetTableCodeMarkdown(codeText, code.Name == "pre")
+                    : _markdownConverter.ConvertNode(code).Replace("\r\n", "\n").Trim('\n');
+                HtmlNode replacement = fragment.CreateTextNode(CreateLiteralPlaceholder("CODE", markdown));
+                if (code.Name == "pre")
+                {
+                    var paragraph = fragment.CreateElement("p");
+                    paragraph.AppendChild(replacement);
+                    replacement = paragraph;
+                }
+                code.ParentNode.ReplaceChild(replacement, code);
+            }
+
+            if (inTable)
+            {
+                foreach (var attribute in fragment.DocumentNode.Descendants().SelectMany(node => node.Attributes)
+                    .Where(attribute => attribute.Name is "href" or "src"))
+                {
+                    attribute.Value = attribute.Value.Replace("|", "%7C");
+                }
+            }
+
             foreach (var textNode in fragment.DocumentNode.Descendants().OfType<HtmlTextNode>().ToList())
             {
                 var text = HtmlEntity.DeEntitize(textNode.Text);
-                textNode.Text = System.Net.WebUtility.HtmlEncode(ProtectLiteralPlainText(text));
+                if (inTable && text.Contains('|'))
+                {
+                    text = text.Replace("|", CreateLiteralPlaceholder("PIPE", @"\|"));
+                }
+                textNode.Text = System.Net.WebUtility.HtmlEncode(
+                    ProtectLiteralPlainText(text, escapeBrackets: !textNode.Ancestors("a").Any()));
             }
         }
 
-        private string CreateLiteralAnglePlaceholder(string kind, string replacement)
+        private static string GetTableCodeMarkdown(string text, bool block)
         {
-            var placeholder = $"{_literalAnglePlaceholderPrefix}{kind}{_literalAnglePlaceholderCounter++}END";
-            _literalAnglePlaceholders.Add(placeholder, replacement);
+            var encoded = Regex.Replace(text, @"[&<>\\`*_\[\]|]", match => $"&#{(int)match.Value[0]};")
+                .Replace("\r\n", "\n").Replace("\r", "\n").Replace("\t", "&#9;")
+                .Replace("\n", block ? "&#10;" : "<br>");
+            return block ? $"<pre><code>{encoded}</code></pre>" : $"<code>{encoded}</code>";
+        }
+
+        private string CreateLiteralPlaceholder(string kind, string replacement)
+        {
+            var placeholder = $"{_literalPlaceholderPrefix}{kind}{_literalPlaceholders.Count}END";
+            _literalPlaceholders.Add((placeholder, replacement));
             return placeholder;
         }
 
@@ -549,6 +617,7 @@ namespace OneNoteMarkdownExporter.Services
         {
             var rows = table.Elements(_ns + "Row").ToList();
             if (!rows.Any()) return "";
+            var columnCount = rows.Max(row => row.Elements(_ns + "Cell").Count());
 
             var sb = new StringBuilder();
             sb.AppendLine("<table>");
@@ -557,10 +626,11 @@ namespace OneNoteMarkdownExporter.Services
             foreach (var row in rows)
             {
                 sb.AppendLine("<tr>");
-                foreach (var cell in row.Elements(_ns + "Cell"))
+                var cells = row.Elements(_ns + "Cell").ToList();
+                for (var column = 0; column < columnCount; column++)
                 {
                     var tag = isFirstRow ? "th" : "td";
-                    var cellContent = GetCellContent(cell);
+                    var cellContent = column < cells.Count ? GetCellContent(cells[column]) : string.Empty;
                     sb.AppendLine($"<{tag}>{cellContent}</{tag}>");
                 }
                 sb.AppendLine("</tr>");
@@ -582,7 +652,7 @@ namespace OneNoteMarkdownExporter.Services
                 var text = new StringBuilder();
                 foreach (var t in oe.Elements(_ns + "T"))
                 {
-                    text.Append(ProcessTextElement(t));
+                    text.Append(ProcessTextElement(t, inTable: true));
                 }
                 if (text.Length > 0)
                 {
@@ -610,7 +680,7 @@ namespace OneNoteMarkdownExporter.Services
             return sb.ToString();
         }
 
-        private string ProtectLiteralPlainText(string text)
+        private string ProtectLiteralPlainText(string text, bool escapeBrackets = true)
         {
             var protectedText = new StringBuilder(text.Length);
 
@@ -624,24 +694,32 @@ namespace OneNoteMarkdownExporter.Services
                         var candidate = text[index..(endIndex + 1)];
                         if (IsLiteralHttpAutolink(candidate))
                         {
-                            protectedText.Append(CreateLiteralAnglePlaceholder("AUTOLINK", candidate));
+                            protectedText.Append(CreateLiteralPlaceholder("AUTOLINK", candidate));
                             index = endIndex;
                             continue;
                         }
                         if (ShouldEscapeLiteralLessThan(text, index))
                         {
-                            protectedText.Append(CreateLiteralAnglePlaceholder("HTML", $"\\{candidate}"));
+                            protectedText.Append(CreateLiteralPlaceholder("HTML", $"\\{candidate}"));
                             index = endIndex;
                             continue;
                         }
                     }
 
-                    protectedText.Append(CreateLiteralAnglePlaceholder("LT", "<"));
+                    protectedText.Append(CreateLiteralPlaceholder("LT", "<"));
                 }
                 else if (text[index] == '>')
                 {
                     var replacement = ShouldEscapeLiteralGreaterThan(text, index) ? @"\>" : ">";
-                    protectedText.Append(CreateLiteralAnglePlaceholder("GT", replacement));
+                    protectedText.Append(CreateLiteralPlaceholder("GT", replacement));
+                }
+                else if (text[index] == '\\')
+                {
+                    protectedText.Append(CreateLiteralPlaceholder("BACKSLASH", @"\\"));
+                }
+                else if (escapeBrackets && text[index] is '[' or ']')
+                {
+                    protectedText.Append(CreateLiteralPlaceholder("BRACKET", $"\\{text[index]}"));
                 }
                 else
                 {
@@ -672,16 +750,6 @@ namespace OneNoteMarkdownExporter.Services
                     url = HtmlEntity.DeEntitize(url).Replace("\\_", "_");
                     return $"]({url})";
                 });
-
-            // Fix escaped underscores in general text
-            // ReverseMarkdown escapes underscores to prevent italic formatting,
-            // but this looks wrong in code, variable names, etc.
-            // We'll unescape all \_ to _ since OneNote doesn't use markdown formatting
-            markdown = markdown.Replace("\\_", "_");
-
-            // Fix escaped asterisks in general text
-            // Same reasoning - OneNote content shouldn't have escaped asterisks
-            markdown = markdown.Replace("\\*", "*");
 
             // Convert naked URL links [url](url) to <url> format
             // This handles cases where the link text matches the URL
@@ -725,9 +793,11 @@ namespace OneNoteMarkdownExporter.Services
             
             markdown = string.Join("\n", lines).Trim();
 
-            foreach (var placeholder in _literalAnglePlaceholders)
+            // Restore enclosing literals before any placeholders nested inside them.
+            for (var index = _literalPlaceholders.Count - 1; index >= 0; index--)
             {
-                markdown = markdown.Replace(placeholder.Key, placeholder.Value, StringComparison.Ordinal);
+                var placeholder = _literalPlaceholders[index];
+                markdown = markdown.Replace(placeholder.Token, placeholder.Markdown, StringComparison.Ordinal);
             }
 
             return markdown;
@@ -744,7 +814,7 @@ namespace OneNoteMarkdownExporter.Services
                         return match.Value;
                     }
 
-                    var url = match.Value;
+                    var url = match.Value.Replace("\\_", "_").Replace("\\*", "*");
                     var trailing = "";
 
                     while (url.Length > 0 && IsTrailingUrlPunctuation(url[^1]))

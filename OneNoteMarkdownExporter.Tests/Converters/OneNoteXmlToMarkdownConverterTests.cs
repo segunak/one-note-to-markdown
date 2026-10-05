@@ -482,7 +482,7 @@ public class OneNoteXmlToMarkdownConverterTests
     }
 
     [Fact]
-    public void Convert_MarkdownLink_DoesNotWrapHref()
+    public void Convert_LiteralMarkdownLink_PreservesVisibleSyntax()
     {
         // Arrange
         var xml = CreatePageXml(@"<one:T><![CDATA[See [Example](https://example.com)]]></one:T>");
@@ -491,8 +491,8 @@ public class OneNoteXmlToMarkdownConverterTests
         var result = _converter.Convert(xml, "", "assets", null, "test");
 
         // Assert
-        result.Should().Contain("See [Example](https://example.com)");
-        result.Should().NotContain("[Example](<https://example.com>)");
+        result.Should().Be(@"See \[Example\](<https://example.com>)");
+        Lint(result).TrimEnd().Should().Be(result);
     }
 
     [Fact]
@@ -778,15 +778,215 @@ public class OneNoteXmlToMarkdownConverterTests
 
     #endregion
 
+    [Theory]
+    [InlineData("[ENV][Component]", @"\[ENV\]\[Component\]")]
+    [InlineData("(ENV)[Component]", @"(ENV)\[Component\]")]
+    [InlineData("[a] [b] and [standalone]", @"\[a\] \[b\] and \[standalone\]")]
+    [InlineData(@"\[literal]", @"\\\[literal\]")]
+    [InlineData(@"C:\notes\file_name", @"C:\\notes\\file\_name")]
+    [InlineData("# of Nodes: 3", @"\# of Nodes: 3")]
+    [InlineData("# LOOP THROUGH HOSTS", @"\# LOOP THROUGH HOSTS")]
+    [InlineData("-----", @"\-----")]
+    [InlineData("________________", @"\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_")]
+    [InlineData("*****", @"\*\*\*\*\*")]
+    [InlineData("* Not a list", @"\* Not a list")]
+    [InlineData("*literal* and _literal_", @"\*literal\* and \_literal\_")]
+    public void Convert_LiteralSyntax_PreservesTextWithAndWithoutLinting(string text, string expected)
+    {
+        var xml = CreatePageXml($"<one:T><![CDATA[{text}]]></one:T>");
+
+        var markdown = _converter.Convert(xml, "", "assets", null, "test");
+
+        markdown.Should().Be(expected);
+        Lint(markdown).TrimEnd().Should().Be(expected);
+    }
+
+    [Fact]
+    public void Convert_BracketsInTitleAndRealLinks_PreservesLabelsAndDestinations()
+    {
+        var xml = CreatePageXml(
+            """<one:T><![CDATA[<a href="https://example.com/path_name?ids[]=1">[ENV][Component]</a>]]></one:T>""",
+            "[Example]");
+
+        var markdown = _converter.Convert(xml, "", "assets", null, "test");
+
+        markdown.Should().Contain(@"# \[Example\]");
+        markdown.Should().Contain(@"[\[ENV\]\[Component\]](https://example.com/path_name?ids[]=1)");
+        Lint(markdown).TrimEnd().Should().Be(markdown);
+    }
+
+    [Theory]
+    [InlineData("Visit https://example.com/path_name", "Visit <https://example.com/path_name>")]
+    [InlineData("Visit https://example.com/*/path_name", "Visit <https://example.com/*/path_name>")]
+    [InlineData("<a href='https://example.com/path_name'>https://example.com/path_name</a>", "<https://example.com/path_name>")]
+    [InlineData("<a href='https://example.com/path_name'>Documentation</a>", "[Documentation](https://example.com/path_name)")]
+    public void Convert_UrlsWithMarkdownCharacters_PreservesDestinations(string html, string expected)
+    {
+        var markdown = _converter.Convert(CreatePageXml($"<one:T><![CDATA[{html}]]></one:T>"), "", "assets", null, "test");
+
+        markdown.Should().Be(expected);
+        Lint(markdown).TrimEnd().Should().Be(expected);
+    }
+
+    [Fact]
+    public void Convert_InlineCode_DoesNotEscapeOrRewriteItsContents()
+    {
+        const string content = "[ENV][Component] (ENV)[Component] *literal* _literal_ <tag> https://example.com/path_name";
+        var html = $"<code>{System.Net.WebUtility.HtmlEncode(content)}</code>";
+
+        var markdown = _converter.Convert(CreatePageXml($"<one:T><![CDATA[{html}]]></one:T>"), "", "assets", null, "test");
+
+        markdown.Should().Be($"`{content}`");
+        Lint(markdown).TrimEnd().Should().Be(markdown);
+    }
+
+    [Fact]
+    public void Convert_FencedCode_PreservesCommentsBracketsUrlsAndBlankLines()
+    {
+        const string content = "# comment\n[ENV][Component]\n(ENV)[Component]\n-----\n<tag>\nhttps://example.com/path_name\n\n\nend";
+        var html = $"<pre><code>{System.Net.WebUtility.HtmlEncode(content)}</code></pre>";
+
+        var markdown = _converter.Convert(CreatePageXml($"<one:T><![CDATA[{html}]]></one:T>"), "", "assets", null, "test");
+
+        markdown.Should().Contain($"```\n{content}\n```");
+        Lint(markdown).Should().Contain($"```\n{content}\n```");
+    }
+
+    [Fact]
+    public void Convert_RealFormattingAndRules_PreservesFormatting()
+    {
+        var xml = CreatePageXml("<one:T><![CDATA[<strong>Strong</strong> <em>Emphasis</em><hr/><p>Text</p><hr/>]]></one:T>");
+
+        var markdown = _converter.Convert(xml, "", "assets", null, "test");
+
+        markdown.Should().Contain("**Strong** *Emphasis*");
+        markdown.Split('\n').Count(line => line == "* * *").Should().Be(2);
+        Lint(markdown).Should().Contain("**Strong** *Emphasis*");
+    }
+
+    [Fact]
+    public void Convert_MultipleH1Sections_KeepsTitleAndShiftsTheirHierarchy()
+    {
+        var html = "<h2>Overview</h2><h1>Details</h1><h2>Nested</h2><h3>Deep</h3><h4>Deeper</h4><h5>Fifth</h5><h6>Sixth</h6><h1>Another</h1><h2>Child</h2>";
+        var xml = CreatePageXml($"<one:T><![CDATA[{html}]]></one:T>", "Page Title");
+
+        var markdown = _converter.Convert(xml, "", "assets", null, "test");
+
+        markdown.Split('\n').Where(line => line.StartsWith('#')).Should().Equal(
+            "# Page Title", "## Overview", "## Details", "### Nested", "#### Deep",
+            "##### Deeper", "###### Fifth", "###### Sixth", "## Another", "### Child");
+        Lint(markdown).TrimEnd().Should().Be(markdown);
+    }
+
+    [Fact]
+    public void Convert_MultipleH1SectionsWithoutTitle_KeepsFirstActualH1()
+    {
+        var xml = CreatePageXml("<one:T><![CDATA[<h1>First</h1><h2>Child</h2><h1>Second</h1><h2>Nested</h2>]]></one:T>");
+
+        var markdown = _converter.Convert(xml, "", "assets", null, "test");
+
+        markdown.Split('\n').Where(line => line.StartsWith('#')).Should().Equal(
+            "# First", "## Child", "## Second", "### Nested");
+        Lint(markdown).TrimEnd().Should().Be(markdown);
+    }
+
+    [Fact]
+    public void Convert_TableWithLiteralPipes_PreservesEveryCell()
+    {
+        var xml = CreateTablePageXml(
+            new[] { "Topic | Category", "Details" },
+            new[] { "Plain", "one | two | three | four | five" },
+            new[] { "Encoded", "a &#124; b" },
+            new[] { "Backslash", @"a\|b" },
+            new[] { "HTML example", "&lt;a href=&quot;a|b&quot;&gt;" });
+
+        var markdown = _converter.Convert(xml, "", "assets", null, "test");
+
+        markdown.Should().Contain(@"| Topic \| Category | Details |");
+        markdown.Should().Contain(@"| Plain | one \| two \| three \| four \| five |");
+        markdown.Should().Contain(@"| Encoded | a \| b |");
+        markdown.Should().Contain(@"| Backslash | a\\\|b |");
+        markdown.Should().Contain("| HTML example | \\<a href=\"a\\|b\"> |");
+        markdown.Should().NotContain("ONENOTELITERAL");
+        Lint(markdown).TrimEnd().Should().Be(markdown);
+    }
+
+    [Fact]
+    public void Convert_TableWithCodeAndLinksContainingPipes_PreservesContentsAndDestinations()
+    {
+        var xml = CreateTablePageXml(
+            new[] { "Topic", "Details" },
+            new[] { "Code", @"<code>a\|b [ENV][Component] *literal*</code>" },
+            new[] { "Link", "<a href='https://example.com/?value=a|b'>A | B</a>" },
+            new[] { "Block code", "<pre><code># comment\n  a | b</code></pre>" });
+
+        var markdown = _converter.Convert(xml, "", "assets", null, "test");
+
+        markdown.Should().Contain("<code>a&#92;&#124;b &#91;ENV&#93;&#91;Component&#93; &#42;literal&#42;</code>");
+        markdown.Should().Contain(@"[A \| B](https://example.com/?value=a%7Cb)");
+        markdown.Should().Contain("<pre><code># comment&#10;  a &#124; b</code></pre>");
+        markdown.Split('\n').Where(line => line.StartsWith('|')).Should().HaveCount(5);
+        Lint(markdown).TrimEnd().Should().Be(markdown);
+    }
+
+    [Fact]
+    public void Convert_UnevenTableRows_PadsHeaderAndShortRowsWithoutDroppingCells()
+    {
+        var xml = CreateTablePageXml(
+            new[] { "First", "Second" },
+            new[] { "A", "B", "C", "D", "E", "F" },
+            new[] { "Only" });
+
+        var markdown = _converter.Convert(xml, "", "assets", null, "test");
+
+        markdown.Should().Contain("| First | Second |  |  |  |  |");
+        markdown.Should().Contain("| A | B | C | D | E | F |");
+        markdown.Should().Contain("| Only |  |  |  |  |  |");
+        var linted = Lint(markdown);
+        linted.Should().Contain("| First | Second | | | | |");
+        linted.Should().Contain("| A | B | C | D | E | F |");
+        linted.Should().Contain("| Only | | | | | |");
+    }
+
+    [Fact]
+    public void Convert_ReusedConverter_DoesNotLeakLiteralPlaceholdersBetweenPages()
+    {
+        var xml = CreatePageXml("<one:T><![CDATA[[ENV][Component] <code>a_b</code>]]></one:T>");
+
+        var first = _converter.Convert(xml, "", "assets", null, "first");
+        var second = _converter.Convert(xml, "", "assets", null, "second");
+
+        first.Should().Be(@"\[ENV\]\[Component\] `a_b`");
+        second.Should().Be(first);
+        second.Should().NotContain("ONENOTELITERAL");
+    }
+
     #region Helper Methods
+
+    private static string Lint(string markdown)
+    {
+        var result = new MarkdownLintCliService().LintContent(markdown);
+        result.Success.Should().BeTrue(result.ErrorMessage);
+        result.WarningMessage.Should().BeEmpty();
+        return result.Content;
+    }
+
+    private static string CreateTablePageXml(params string[][] rows)
+    {
+        var rowXml = rows.Select(row => "<one:Row>" + string.Concat(row.Select(cell =>
+            $"<one:Cell><one:OEChildren><one:OE><one:T><![CDATA[{cell}]]></one:T></one:OE></one:OEChildren></one:Cell>")) + "</one:Row>");
+        return CreatePageXml("<one:Table>" + string.Concat(rowXml) + "</one:Table>");
+    }
 
     /// <summary>
     /// Creates a minimal OneNote page XML with the given content element.
     /// </summary>
-    private static string CreatePageXml(string contentElement)
+    private static string CreatePageXml(string contentElement, string? title = null)
     {
+        var titleElement = title == null ? "" : $"<one:Title><one:OE><one:T><![CDATA[{title}]]></one:T></one:OE></one:Title>";
         return $@"<?xml version=""1.0""?>
             <one:Page xmlns:one=""http://schemas.microsoft.com/office/onenote/2013/onenote"">
+                {titleElement}
                 <one:Outline>
                     <one:OEChildren>
                         <one:OE>{contentElement}</one:OE>
