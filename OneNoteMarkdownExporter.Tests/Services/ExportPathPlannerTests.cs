@@ -68,7 +68,7 @@ public class ExportPathPlannerTests
         var result = planner.CreatePageContext(page, sectionFolder, assetsFolder);
 
         result.MarkdownFilePath.Should().Be(Path.Combine(sectionFolder, "Page Name.md"));
-        result.ChildPageFolderPath.Should().Be(Path.Combine(sectionFolder, "Page Name"));
+        result.MarkdownFolderPath.Should().Be(sectionFolder);
         result.AssetsFolderPath.Should().Be(Path.Combine(sectionFolder, "_assets_PageName"));
         result.RelativeAssetsPath.Should().Be("_assets_PageName");
     }
@@ -103,6 +103,95 @@ public class ExportPathPlannerTests
 
         Path.GetFileName(first).Should().Be("_assets_ProjectNotes");
         Path.GetFileName(second).Should().MatchRegex("^_assets_ProjectNotes_[0-9a-f]{8}$");
+    }
+
+    [Theory]
+    [InlineData(243)]
+    [InlineData(244)]
+    [InlineData(245)]
+    public void CreatePageContext_WithLeafNearDirectoryLimit_DoesNotPlanAnUnusedFolder(int parentLength)
+    {
+        var planner = new ExportPathPlanner(CreateTempExportPath(), new ExportOptions());
+        var page = new OneNoteItem { Id = "leaf-id", Name = "Leaf Page", Type = OneNoteItemType.Page };
+        var parent = CreateFolderPathOfLength(parentLength);
+
+        var context = planner.CreatePageContext(page, parent, planner.GetCentralizedAssetsFolderPath());
+
+        context.MarkdownFilePath.Should().Be(Path.Combine(parent, "Leaf Page.md"));
+        context.MarkdownFilePath.Length.Should().BeLessOrEqualTo(ExportPathSanitizer.MaxWin32PathLength);
+    }
+
+    [Theory]
+    [InlineData(AssetOrganizationMode.Centralized, 9)]
+    [InlineData(AssetOrganizationMode.Page, 18)]
+    public void GetChildPageFolderPath_WithLongDescendants_ReservesFoldersAndAssets(AssetOrganizationMode mode, int expectedReserve)
+    {
+        var leaf = new OneNoteItem { Id = "leaf", Name = new string('L', 300), Type = OneNoteItemType.Page };
+        var child = new OneNoteItem { Id = "child", Name = new string('C', 300), Type = OneNoteItemType.Page, Children = { leaf } };
+        var parent = new OneNoteItem { Id = "parent", Name = new string('P', 300), Type = OneNoteItemType.Page, IsSelected = true, Children = { child } };
+        var planner = new ExportPathPlanner(CreateTempExportPath(), new ExportOptions { AssetOrganizationMode = mode });
+        planner.ValidatePaths(new[] { parent });
+
+        var parentFolder = planner.GetChildPageFolderPath(planner.OutputRoot, parent);
+        var childFolder = planner.GetChildPageFolderPath(parentFolder, child);
+        var assetsFolder = mode == AssetOrganizationMode.Centralized
+            ? planner.GetCentralizedAssetsFolderPath()
+            : planner.GetScopedAssetsFolderPath(childFolder, leaf);
+        var context = planner.CreatePageContext(leaf, childFolder, assetsFolder);
+
+        parentFolder.Length.Should().Be(ExportPathSanitizer.MaxWin32DirectoryPathLength - expectedReserve);
+        childFolder.Length.Should().BeLessOrEqualTo(ExportPathSanitizer.MaxWin32DirectoryPathLength);
+        context.MarkdownFilePath.Length.Should().BeLessOrEqualTo(ExportPathSanitizer.MaxWin32PathLength);
+        Path.Combine(assetsFolder, ExportPathSanitizer.GetSafeAssetFileName(assetsFolder, leaf.Name, 1, ".png"))
+            .Length.Should().BeLessOrEqualTo(ExportPathSanitizer.MaxWin32PathLength);
+    }
+
+    [Fact]
+    public void ValidatePaths_WithDeepShortNames_UsesTheirActualLengths()
+    {
+        var root = new OneNoteItem { Name = "A", Type = OneNoteItemType.SectionGroup, IsSelected = true };
+        var current = root;
+        for (var i = 1; i < 10; i++)
+        {
+            var child = new OneNoteItem { Name = "A", Type = OneNoteItemType.SectionGroup };
+            current.Children.Add(child);
+            current = child;
+        }
+
+        var page = new OneNoteItem { Id = "page", Name = new string('P', 300), Type = OneNoteItemType.Page };
+        current.Children.Add(page);
+        var planner = new ExportPathPlanner(CreateFolderPathOfLength(221), new ExportOptions());
+        planner.ValidatePaths(new[] { root });
+        var folder = planner.OutputRoot;
+
+        for (var item = root; item.Type != OneNoteItemType.Page; item = item.Children.Single())
+        {
+            folder = planner.GetContainerFolderPath(folder, item);
+            Path.GetFileName(folder).Should().Be("A");
+        }
+
+        folder.Length.Should().Be(241);
+        planner.CreatePageContext(page, folder, planner.GetCentralizedAssetsFolderPath())
+            .MarkdownFilePath.Length.Should().Be(ExportPathSanitizer.MaxWin32PathLength);
+    }
+
+    [Fact]
+    public void ValidatePaths_WithImpossibleHierarchy_RequestsShorterRoot()
+    {
+        var page = new OneNoteItem { Id = "page", Name = "Page", Type = OneNoteItemType.Page };
+        var section = new OneNoteItem { Id = "section", Name = new string('S', 300), Type = OneNoteItemType.Section, Children = { page } };
+        var notebook = new OneNoteItem { Id = "notebook", Name = new string('N', 300), Type = OneNoteItemType.Notebook, IsSelected = true, Children = { section } };
+        var planner = new ExportPathPlanner(CreateFolderPathOfLength(240), new ExportOptions());
+
+        var act = () => planner.ValidatePaths(new[] { notebook });
+
+        act.Should().Throw<PathTooLongException>().WithMessage("*even with compact names*Choose a shorter output folder*");
+    }
+
+    private static string CreateFolderPathOfLength(int length)
+    {
+        var root = Path.GetPathRoot(Path.GetTempPath())!;
+        return Path.Combine(root, new string('P', length - root.Length));
     }
 
     private static string CreateTempExportPath()

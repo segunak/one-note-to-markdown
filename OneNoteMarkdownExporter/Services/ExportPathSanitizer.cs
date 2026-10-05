@@ -14,7 +14,7 @@ namespace OneNoteMarkdownExporter.Services
         public const int MaxWin32DirectoryPathLength = MaxWin32PathLength - 14;
 
         private const int MaxComponentLength = 255;
-        private const int HashLength = 8;
+        internal const int HashLength = 8;
         private const string DefaultFallbackName = "Untitled";
 
         private static readonly HashSet<string> ReservedNames = new(StringComparer.OrdinalIgnoreCase)
@@ -47,10 +47,17 @@ namespace OneNoteMarkdownExporter.Services
             return $"{SanitizeComponent(pageName, DefaultFallbackName, pageId)}.md";
         }
 
-        public static string GetSafeDirectoryPath(string parentPath, string? componentName, string? stableId = null, string fallbackName = DefaultFallbackName)
+        internal static int GetMinimumComponentLength(string? name)
         {
+            return Math.Min(SanitizeComponent(name).Length, HashLength);
+        }
+
+        public static string GetSafeDirectoryPath(string parentPath, string? componentName, string? stableId = null, string fallbackName = DefaultFallbackName, int reservedPathLength = 0)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(reservedPathLength);
+
             var component = SanitizeComponent(componentName, fallbackName, stableId);
-            var safeComponent = FitComponentToPath(parentPath, component, string.Empty, stableId ?? componentName ?? fallbackName, MaxWin32DirectoryPathLength);
+            var safeComponent = FitComponentToPath(parentPath, component, string.Empty, stableId ?? componentName ?? fallbackName, MaxWin32DirectoryPathLength - reservedPathLength);
 
             return Path.Combine(parentPath, safeComponent);
         }
@@ -58,12 +65,14 @@ namespace OneNoteMarkdownExporter.Services
         public static string GetSafeMarkdownFilePath(string folderPath, string? pageName, string? pageId = null, int copyCounter = 0)
         {
             var stem = SanitizeComponent(pageName, DefaultFallbackName, pageId);
+            var stableInput = pageId ?? pageName ?? DefaultFallbackName;
             if (copyCounter > 0)
             {
                 stem = $"{stem} ({copyCounter})";
+                stableInput = FormattableString.Invariant($"{stableInput}\0copy:{copyCounter}");
             }
 
-            var safeFileName = FitComponentToPath(folderPath, stem, ".md", pageId ?? pageName ?? DefaultFallbackName, MaxWin32PathLength);
+            var safeFileName = FitComponentToPath(folderPath, stem, ".md", stableInput, MaxWin32PathLength);
 
             return Path.Combine(folderPath, safeFileName);
         }
@@ -76,7 +85,8 @@ namespace OneNoteMarkdownExporter.Services
                 ? imageStem
                 : $"{SanitizeComponent(pagePrefix, "page", pagePrefix)}_{imageStem}";
 
-            return FitComponentToPath(assetsFolder, stem, normalizedExtension, pagePrefix ?? imageStem, MaxWin32PathLength);
+            var stableInput = FormattableString.Invariant($"{pagePrefix ?? imageStem}\0image:{imageIndex}");
+            return FitComponentToPath(assetsFolder, stem, normalizedExtension, stableInput, MaxWin32PathLength);
         }
 
         public static string GetSafeAssetScopeDirectoryPath(
@@ -97,12 +107,13 @@ namespace OneNoteMarkdownExporter.Services
 
             var hash = GetStableHash(stableInput);
             var uniqueStem = $"{baseName}_{hash}";
-            folderName = FitComponentToPath(parentPath, uniqueStem, string.Empty, stableInput, MaxWin32DirectoryPathLength);
+            folderName = FitComponentToPath(parentPath, uniqueStem, string.Empty, $"{stableInput}\0collision:1", MaxWin32DirectoryPathLength);
 
             var counter = 2;
             while (!claimedNames.Add(folderName))
             {
-                folderName = FitComponentToPath(parentPath, $"{uniqueStem}_{counter}", string.Empty, stableInput, MaxWin32DirectoryPathLength);
+                var collisionInput = FormattableString.Invariant($"{stableInput}\0collision:{counter}");
+                folderName = FitComponentToPath(parentPath, $"{uniqueStem}_{counter}", string.Empty, collisionInput, MaxWin32DirectoryPathLength);
                 counter++;
             }
 
@@ -252,9 +263,9 @@ namespace OneNoteMarkdownExporter.Services
             var availableLength = GetAvailableComponentLength(parentPath, maxPathLength);
             var maxComponentLength = Math.Min(MaxComponentLength, availableLength);
 
-            if (maxComponentLength < extension.Length + 1)
+            if (maxComponentLength < extension.Length + Math.Min(stem.Length, HashLength))
             {
-                throw new PathTooLongException($"The export path is too long to create a file or folder under '{parentPath}'.");
+                throw new PathTooLongException($"The export path is too long to create a file or folder under '{parentPath}' while preserving a safe name. Choose a shorter output or assets folder.");
             }
 
             var fullComponent = $"{stem}{extension}";
@@ -288,7 +299,7 @@ namespace OneNoteMarkdownExporter.Services
             var suffix = $"_{hash}";
             if (maxStemLength <= suffix.Length)
             {
-                return $"{hash[..maxStemLength]}{extension}";
+                return $"{hash}{extension}";
             }
 
             var prefixLength = maxStemLength - suffix.Length;

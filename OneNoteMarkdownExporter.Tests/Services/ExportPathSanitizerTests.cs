@@ -1,5 +1,6 @@
 using System.IO;
 using FluentAssertions;
+using Moq;
 using OneNoteMarkdownExporter.Services;
 using Xunit;
 
@@ -270,6 +271,120 @@ public class ExportPathSanitizerTests
 
         Path.GetFileName(first).Should().Be("_assets_ProjectNotes");
         Path.GetFileName(second).Should().Be("_assets_ProjectNotes");
+    }
+
+    [Fact]
+    public void GetSafeDirectoryPath_WithReservedDescendants_LeavesSpaceForEveryLevel()
+    {
+        var parent = ExportPathSanitizer.GetSafeDirectoryPath(CreateTempExportPath(), new string('P', 300), "parent", reservedPathLength: 18);
+        var child = ExportPathSanitizer.GetSafeDirectoryPath(parent, new string('C', 300), "child", reservedPathLength: 9);
+        var grandchild = ExportPathSanitizer.GetSafeDirectoryPath(child, new string('G', 300), "grandchild");
+
+        parent.Length.Should().Be(ExportPathSanitizer.MaxWin32DirectoryPathLength - 18);
+        child.Length.Should().Be(ExportPathSanitizer.MaxWin32DirectoryPathLength - 9);
+        grandchild.Length.Should().Be(ExportPathSanitizer.MaxWin32DirectoryPathLength);
+        Path.GetFileName(child).Should().MatchRegex("^[0-9a-f]{8}$");
+        Path.GetFileName(grandchild).Should().MatchRegex("^[0-9a-f]{8}$");
+    }
+
+    [Fact]
+    public void GetSafeDirectoryPath_WithNegativeReservation_Throws()
+    {
+        var act = () => ExportPathSanitizer.GetSafeDirectoryPath(CreateTempExportPath(), "Folder", reservedPathLength: -1);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(8)]
+    [InlineData(9)]
+    public void GetSafeMarkdownFilePath_WithCompactCopies_KeepsFullHashesAndDistinctNames(int stemBudget)
+    {
+        var folder = CreateFolderPathOfLength(ExportPathSanitizer.MaxWin32PathLength - 1 - ".md".Length - stemBudget);
+        var name = new string('P', 300);
+        var counters = new[] { 0, 1, 2, 10, 100 };
+
+        var paths = counters.Select(counter => ExportPathSanitizer.GetSafeMarkdownFilePath(folder, name, "page-id", counter)).ToArray();
+
+        paths.Should().OnlyHaveUniqueItems();
+        foreach (var path in paths)
+        {
+            path.Length.Should().BeLessOrEqualTo(ExportPathSanitizer.MaxWin32PathLength);
+            Path.GetFileName(path).Should().MatchRegex(@"^[0-9a-f]{8}\.md$");
+        }
+
+        ExportPathSanitizer.GetSafeMarkdownFilePath(folder, name, "page-id", 1).Should().Be(paths[1]);
+    }
+
+    [Fact]
+    public void GetSafeMarkdownFilePath_WithCopyInsideBudget_PreservesNumberedName()
+    {
+        var path = ExportPathSanitizer.GetSafeMarkdownFilePath(CreateTempExportPath(), "Notes", "page-id", 1);
+
+        Path.GetFileName(path).Should().Be("Notes (1).md");
+    }
+
+    [Theory]
+    [InlineData(8)]
+    [InlineData(9)]
+    public void GetSafeAssetFileName_WithCompactImages_KeepsFullHashesAndDistinctNames(int stemBudget)
+    {
+        var folder = CreateFolderPathOfLength(ExportPathSanitizer.MaxWin32PathLength - 1 - ".png".Length - stemBudget);
+        var prefix = new string('P', 300);
+        var indices = new[] { 1, 2, 10, 10000 };
+
+        var names = indices.Select(index => ExportPathSanitizer.GetSafeAssetFileName(folder, prefix, index, ".png")).ToArray();
+
+        names.Should().OnlyHaveUniqueItems();
+        foreach (var name in names)
+        {
+            name.Should().MatchRegex(@"^[0-9a-f]{8}\.png$");
+            Path.Combine(folder, name).Length.Should().BeLessOrEqualTo(ExportPathSanitizer.MaxWin32PathLength);
+        }
+
+        ExportPathSanitizer.GetSafeAssetFileName(folder, prefix, 1, ".png").Should().Be(names[0]);
+    }
+
+    [Fact]
+    public void GetSafeAssetFileName_WithInsufficientHashSpace_ThrowsInsteadOfWeakeningHash()
+    {
+        var folder = CreateFolderPathOfLength(ExportPathSanitizer.MaxWin32PathLength - 1 - ".png".Length - 7);
+
+        var act = () => ExportPathSanitizer.GetSafeAssetFileName(folder, "Page", 1, ".png");
+
+        act.Should().Throw<PathTooLongException>().WithMessage("*Choose a shorter output or assets folder*");
+    }
+
+    [Fact]
+    public void GetSafeAssetScopeDirectoryPath_WithCompactCollisions_EachRetryChangesTheName()
+    {
+        var folder = CreateFolderPathOfLength(ExportPathSanitizer.MaxWin32DirectoryPathLength - 1 - 8);
+        var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var claimedNames = new Mock<ISet<string>>();
+        var attempts = 0;
+        claimedNames.Setup(names => names.Add(It.IsAny<string>())).Returns((string name) =>
+        {
+            attempts++;
+            attempts.Should().BeLessThan(100, "collision retries must make progress");
+            return claimed.Add(name);
+        });
+
+        var paths = Enumerable.Range(0, 5)
+            .Select(_ => ExportPathSanitizer.GetSafeAssetScopeDirectoryPath(folder, "_assets", "Page", "same-id", claimedNames.Object))
+            .ToArray();
+
+        paths.Should().OnlyHaveUniqueItems();
+        foreach (var path in paths)
+        {
+            path.Length.Should().Be(ExportPathSanitizer.MaxWin32DirectoryPathLength);
+            Path.GetFileName(path).Should().MatchRegex("^[0-9a-f]{8}$");
+        }
+    }
+
+    private static string CreateFolderPathOfLength(int length)
+    {
+        var root = Path.GetPathRoot(Path.GetTempPath())!;
+        return Path.Combine(root, new string('P', length - root.Length));
     }
 
     private static string CreateTempExportPath()

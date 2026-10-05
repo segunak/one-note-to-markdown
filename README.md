@@ -249,6 +249,8 @@ If only a subpage is selected for export, the parent folder is still created so 
 
 Exported folder and file names are made safe for Windows. Invalid filename characters are replaced, trailing spaces and periods are removed, and reserved Windows names such as `CON`, `NUL`, `COM1`, and `LPT1` are adjusted. Long names are preserved when the full target path fits within the standard Windows path budget. When a generated path is too long, only the generated OneNote-derived name is shortened, and a stable hash suffix keeps repeated exports targeting the same file.
 
+Folder names also reserve space for nested sections, subpages, and the selected asset layout. These budgets use the loaded hierarchy, so selecting fewer pages does not change how their ancestor folder names are shortened. Compact names retain the full eight-character hash, and shortened image names and numbered copies remain distinct. If the output or centralized assets path leaves too little room even for compact names, the export stops before writing pages and asks you to choose a shorter folder.
+
 ## Markdown Linting
 
 The app uses [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) for Markdown linting. Node.js and the CLI bundle are included, so it works out of the box with no additional setup.

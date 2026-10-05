@@ -373,6 +373,7 @@ namespace OneNoteMarkdownExporter.Services
             }
 
             var planner = new ExportPathPlanner(options.OutputPath, options);
+            planner.ValidatePaths(selectedItems);
             var centralizedAssetsRoot = options.AssetOrganizationMode == AssetOrganizationMode.Centralized
                 ? AssetPathResolver.ResolveAssetsFolderPath(options.OutputPath, options.AssetsFolderPath)
                 : null;

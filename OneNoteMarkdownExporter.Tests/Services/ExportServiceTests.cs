@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using OneNoteMarkdownExporter.Models;
 using OneNoteMarkdownExporter.Services;
@@ -499,6 +500,292 @@ public class ExportServiceTests
         }
     }
 
+    [Theory]
+    [InlineData(AssetOrganizationMode.Centralized, true)]
+    [InlineData(AssetOrganizationMode.Notebook, true)]
+    [InlineData(AssetOrganizationMode.Section, true)]
+    [InlineData(AssetOrganizationMode.Page, true)]
+    [InlineData(AssetOrganizationMode.Centralized, false)]
+    [InlineData(AssetOrganizationMode.Notebook, false)]
+    [InlineData(AssetOrganizationMode.Section, false)]
+    [InlineData(AssetOrganizationMode.Page, false)]
+    public async Task ExportSelectedAsync_WithLongHierarchy_ExportsEveryPageAndImageWithinBudget(AssetOrganizationMode mode, bool includeContainers)
+    {
+        var outputPath = CreateTempExportPath();
+        var source = new FakeOneNoteExportSource { PageXml = PageWithImagesXml };
+        var service = new ExportService(source, new OneNoteXmlToMarkdownConverter(), new PassthroughMarkdownLintService());
+        var options = new ExportOptions { OutputPath = outputPath, AssetOrganizationMode = mode, ApplyLinting = false, Overwrite = true };
+
+        try
+        {
+            var result = await service.ExportSelectedAsync(CreateLongHierarchy(includeContainers), options);
+
+            result.Success.Should().BeTrue(result.Error);
+            result.ExportedPages.Should().Be(3);
+            result.FailedPages.Should().Be(0);
+            source.RequestedPageIds.Should().Equal("parent-page-id", "child-page-id", "grandchild-page-id");
+            var markdownFiles = Directory.GetFiles(outputPath, "*.md", SearchOption.AllDirectories);
+            markdownFiles.Should().HaveCount(3);
+            Directory.GetFiles(outputPath, "*.png", SearchOption.AllDirectories).Should().HaveCount(6);
+            markdownFiles.Select(path => Path.GetRelativePath(outputPath, path).Split(Path.DirectorySeparatorChar).Length)
+                .Order().Should().Equal(includeContainers ? new[] { 5, 6, 7 } : new[] { 1, 2, 3 });
+
+            foreach (var markdownFile in markdownFiles)
+            {
+                markdownFile.Length.Should().BeLessOrEqualTo(ExportPathSanitizer.MaxWin32PathLength);
+                var images = GetImagePaths(markdownFile);
+                images.Should().OnlyHaveUniqueItems();
+                File.ReadAllBytes(images[0]).Should().Equal(new byte[] { 1, 2, 3 });
+                File.ReadAllBytes(images[1]).Should().Equal(new byte[] { 4, 5, 6 });
+                images.Should().OnlyContain(path => path.Length <= ExportPathSanitizer.MaxWin32PathLength);
+            }
+
+            var perPageAssets = mode == AssetOrganizationMode.Page || (!includeContainers && mode != AssetOrganizationMode.Centralized);
+            var directories = Directory.GetDirectories(outputPath, "*", SearchOption.AllDirectories);
+            directories.Should().HaveCount((includeContainers ? 6 : 2) + (perPageAssets ? 3 : 1));
+            directories.Should().OnlyContain(path => path.Length <= ExportPathSanitizer.MaxWin32DirectoryPathLength);
+        }
+        finally
+        {
+            if (Directory.Exists(outputPath)) Directory.Delete(outputPath, true);
+        }
+    }
+
+    [Fact]
+    public async Task ExportSelectedAsync_WithLongNamesAndOverwriteDisabled_KeepsEveryCopy()
+    {
+        var outputPath = CreateTempExportPath();
+        var source = new FakeOneNoteExportSource { PageXml = PageWithImagesXml };
+        var service = new ExportService(source, new OneNoteXmlToMarkdownConverter(), new PassthroughMarkdownLintService());
+        var hierarchy = CreateLongHierarchy();
+        var options = new ExportOptions { OutputPath = outputPath, AssetOrganizationMode = AssetOrganizationMode.Page, ApplyLinting = false, Overwrite = false };
+
+        try
+        {
+            var first = await service.ExportSelectedAsync(hierarchy, options).WaitAsync(TimeSpan.FromSeconds(30));
+            first.Success.Should().BeTrue(first.Error);
+            var originals = Directory.GetFiles(outputPath, "*.md", SearchOption.AllDirectories).ToDictionary(path => path, File.ReadAllText);
+
+            for (var run = 2; run <= 3; run++)
+            {
+                var result = await service.ExportSelectedAsync(hierarchy, options).WaitAsync(TimeSpan.FromSeconds(30));
+
+                result.Success.Should().BeTrue(result.Error);
+                result.ExportedPages.Should().Be(3);
+                Directory.GetFiles(outputPath, "*.md", SearchOption.AllDirectories).Should().HaveCount(3 * run);
+                Directory.GetFiles(outputPath, "*.png", SearchOption.AllDirectories).Should().HaveCount(6);
+            }
+
+            foreach (var original in originals)
+            {
+                File.ReadAllText(original.Key).Should().Be(original.Value);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(outputPath)) Directory.Delete(outputPath, true);
+        }
+    }
+
+    [Fact]
+    public async Task ExportSelectedAsync_WithPartialSelection_ReusesFullExportPaths()
+    {
+        var outputPath = CreateTempExportPath();
+        var source = new FakeOneNoteExportSource { PageXml = PageWithImagesXml };
+        var service = new ExportService(source, new OneNoteXmlToMarkdownConverter(), new PassthroughMarkdownLintService());
+        var hierarchy = CreateLongHierarchy(includeContainers: false);
+        var parent = hierarchy.Single();
+        var child = parent.Children.Single();
+        var leaf = child.Children.Single();
+        var options = new ExportOptions { OutputPath = outputPath, AssetOrganizationMode = AssetOrganizationMode.Page, ApplyLinting = false, Overwrite = true };
+        var fullProgress = new RecordingExportProgress();
+        var partialProgress = new RecordingExportProgress();
+
+        try
+        {
+            var full = await service.ExportSelectedAsync(hierarchy, options, fullProgress);
+            full.Success.Should().BeTrue(full.Error);
+            var fullLeafPath = fullProgress.Updates.Single(update => update.Kind == ExportProgressKind.PageExported && update.Page?.Id == leaf.Id).TargetPath;
+            parent.IsSelected = false;
+            leaf.IsSelected = true;
+            source.RequestedPageIds.Clear();
+
+            var partial = await service.ExportSelectedAsync(hierarchy, options, partialProgress);
+
+            partial.Success.Should().BeTrue(partial.Error);
+            partial.ExportedPages.Should().Be(1);
+            source.RequestedPageIds.Should().Equal(leaf.Id);
+            partialProgress.Updates.Single(update => update.Kind == ExportProgressKind.PageExported).TargetPath.Should().Be(fullLeafPath);
+            Directory.GetFiles(outputPath, "*.md", SearchOption.AllDirectories).Should().HaveCount(3);
+            Directory.GetFiles(outputPath, "*.png", SearchOption.AllDirectories).Should().HaveCount(6);
+        }
+        finally
+        {
+            if (Directory.Exists(outputPath)) Directory.Delete(outputPath, true);
+        }
+    }
+
+    [Fact]
+    public async Task ExportSelectedAsync_WithImpossibleLaterHierarchy_StopsBeforeWritingAnyPages()
+    {
+        var tempRoot = CreateTempExportPath();
+        var outputPath = Path.Combine(tempRoot, new string('O', 235 - tempRoot.Length - 1));
+        var source = new FakeOneNoteExportSource();
+        var service = new ExportService(source, new RecordingMarkdownConverter(), new PassthroughMarkdownLintService());
+        var items = CreateLongHierarchy();
+        items.Insert(0, new OneNoteItem { Id = "first-page", Name = "First", Type = OneNoteItemType.Page, IsSelected = true });
+        var options = new ExportOptions { OutputPath = outputPath, AssetsFolderPath = Path.Combine(tempRoot, "assets"), ApplyLinting = false };
+
+        try
+        {
+            var result = await service.ExportSelectedAsync(items, options);
+
+            result.Success.Should().BeFalse();
+            result.Error.Should().Contain("Choose a shorter output folder");
+            result.ExportedPages.Should().Be(0);
+            source.RequestedPageIds.Should().BeEmpty();
+            Directory.GetFiles(outputPath, "*", SearchOption.AllDirectories).Should().BeEmpty();
+            Directory.GetDirectories(outputPath, "*", SearchOption.AllDirectories).Should().BeEmpty();
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(247, false, true)]
+    [InlineData(248, false, false)]
+    [InlineData(248, true, true)]
+    public async Task ExportSelectedAsync_WithRootNearFileLimit_ReservesCopiesWhenNeeded(int rootLength, bool overwrite, bool expectedSuccess)
+    {
+        var tempRoot = CreateTempExportPath();
+        var outputPath = Path.Combine(tempRoot, new string('O', rootLength - tempRoot.Length - 1));
+        var source = new FakeOneNoteExportSource();
+        var service = new ExportService(source, new RecordingMarkdownConverter(), new PassthroughMarkdownLintService());
+        var items = new List<OneNoteItem> { new() { Id = "page", Name = "Page", Type = OneNoteItemType.Page, IsSelected = true } };
+        var options = new ExportOptions { OutputPath = outputPath, AssetsFolderPath = Path.Combine(tempRoot, "assets"), ApplyLinting = false, Overwrite = overwrite };
+
+        try
+        {
+            var result = await service.ExportSelectedAsync(items, options);
+
+            result.Success.Should().Be(expectedSuccess, result.Error);
+            if (expectedSuccess)
+            {
+                result.ExportedPages.Should().Be(1);
+                var repeated = await service.ExportSelectedAsync(items, options).WaitAsync(TimeSpan.FromSeconds(30));
+                repeated.Success.Should().BeTrue(repeated.Error);
+                var files = Directory.GetFiles(outputPath, "*.md");
+                files.Should().HaveCount(overwrite ? 1 : 2);
+                files.Should().OnlyContain(path => path.Length <= ExportPathSanitizer.MaxWin32PathLength);
+            }
+            else
+            {
+                result.Error.Should().Contain("Choose a shorter output folder");
+                source.RequestedPageIds.Should().BeEmpty();
+                Directory.GetFiles(outputPath, "*", SearchOption.AllDirectories).Should().BeEmpty();
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(245)]
+    [InlineData(246)]
+    public async Task ExportSelectedAsync_WithCustomAssetsAtFileLimit_PreservesBothImages(int assetsPathLength)
+    {
+        var tempRoot = CreateTempExportPath();
+        var outputPath = Path.Combine(tempRoot, "export");
+        var assetsPath = Path.Combine(tempRoot, new string('A', assetsPathLength - tempRoot.Length - 1));
+        var source = new FakeOneNoteExportSource { PageXml = PageWithImagesXml };
+        var service = new ExportService(source, new OneNoteXmlToMarkdownConverter(), new PassthroughMarkdownLintService());
+        var options = new ExportOptions { OutputPath = outputPath, AssetsFolderPath = assetsPath, ApplyLinting = false, Overwrite = true };
+
+        try
+        {
+            var result = await service.ExportSelectedAsync(CreateSelectedHierarchy(), options);
+
+            result.Success.Should().BeTrue(result.Error);
+            var images = GetImagePaths(Directory.GetFiles(outputPath, "*.md", SearchOption.AllDirectories).Single());
+            images.Should().OnlyHaveUniqueItems();
+            images.Should().OnlyContain(path => path.Length == assetsPathLength + 1 + 8 + ".png".Length);
+            File.ReadAllBytes(images[0]).Should().Equal(new byte[] { 1, 2, 3 });
+            File.ReadAllBytes(images[1]).Should().Equal(new byte[] { 4, 5, 6 });
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true);
+        }
+    }
+
+    [Fact]
+    public async Task ExportSelectedAsync_WithImpossibleCustomAssetsPath_StopsBeforeReadingPages()
+    {
+        var tempRoot = CreateTempExportPath();
+        var outputPath = Path.Combine(tempRoot, "export");
+        var assetsPath = Path.Combine(tempRoot, new string('A', 247 - tempRoot.Length - 1));
+        var source = new FakeOneNoteExportSource { PageXml = PageWithImagesXml };
+        var service = new ExportService(source, new OneNoteXmlToMarkdownConverter(), new PassthroughMarkdownLintService());
+        var options = new ExportOptions { OutputPath = outputPath, AssetsFolderPath = assetsPath, ApplyLinting = false };
+
+        try
+        {
+            var result = await service.ExportSelectedAsync(CreateSelectedHierarchy(), options);
+
+            result.Success.Should().BeFalse();
+            result.Error.Should().Contain("Choose a shorter output or assets folder");
+            source.RequestedPageIds.Should().BeEmpty();
+            Directory.GetFiles(outputPath, "*", SearchOption.AllDirectories).Should().BeEmpty();
+            Directory.Exists(assetsPath).Should().BeFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true);
+        }
+    }
+
+    private const string PageWithImagesXml = """
+        <one:Page xmlns:one="http://schemas.microsoft.com/office/onenote/2013/onenote">
+            <one:Image format="png"><one:Data>AQID</one:Data></one:Image>
+            <one:Image format="png"><one:Data>BAUG</one:Data></one:Image>
+        </one:Page>
+        """;
+
+    private static string[] GetImagePaths(string markdownFile)
+    {
+        var markdown = File.ReadAllText(markdownFile);
+        markdown.Should().NotContain("Image export failed");
+        var matches = Regex.Matches(markdown, @"!\[image\]\(([^)]+)\)");
+        matches.Should().HaveCount(2);
+        return matches.Select(match => Path.GetFullPath(Path.Combine(
+            Path.GetDirectoryName(markdownFile)!,
+            Uri.UnescapeDataString(match.Groups[1].Value).Replace('/', Path.DirectorySeparatorChar)))).ToArray();
+    }
+
+    private static List<OneNoteItem> CreateLongHierarchy(bool includeContainers = true)
+    {
+        var hierarchy = CreateParentSubpageHierarchy(parentSelected: true, childSelected: false);
+        var notebook = hierarchy.Single();
+        var section = notebook.Children.Single();
+        var parent = section.Children.Single();
+        var child = parent.Children.Single();
+        var leaf = child.Children.Single();
+        notebook.Name = new string('N', 300);
+        section.Name = new string('S', 300);
+        parent.Name = new string('P', 300);
+        child.Name = new string('C', 300);
+        leaf.Name = new string('L', 300);
+        var innerGroup = new OneNoteItem { Id = "inner-group", Name = new string('I', 300), Type = OneNoteItemType.SectionGroup, Children = { section } };
+        var outerGroup = new OneNoteItem { Id = "outer-group", Name = new string('O', 300), Type = OneNoteItemType.SectionGroup, Children = { innerGroup } };
+        notebook.Children.Clear();
+        notebook.Children.Add(outerGroup);
+        return includeContainers ? hierarchy : new List<OneNoteItem> { parent };
+    }
+
     private static List<OneNoteItem> CreateSelectedHierarchy(DateTimeOffset? created = null, DateTimeOffset? modified = null)
     {
         return new List<OneNoteItem>
@@ -591,6 +878,9 @@ public class ExportServiceTests
 
     private sealed class FakeOneNoteExportSource : IOneNoteExportSource
     {
+        public string PageXml { get; init; } = "<one:Page xmlns:one=\"http://schemas.microsoft.com/office/onenote/2013/onenote\" />";
+        public List<string> RequestedPageIds { get; } = new();
+
         public List<OneNoteItem> GetNotebookHierarchy()
         {
             return CreateSelectedHierarchy();
@@ -598,12 +888,23 @@ public class ExportServiceTests
 
         public string GetPageContent(string pageId)
         {
-            return "<one:Page xmlns:one=\"http://schemas.microsoft.com/office/onenote/2013/onenote\" />";
+            RequestedPageIds.Add(pageId);
+            return PageXml;
         }
 
         public string? GetBinaryPageContent(string pageId, string callbackId)
         {
             return null;
+        }
+    }
+
+    private sealed class RecordingExportProgress : IProgress<ExportProgressUpdate>
+    {
+        public List<ExportProgressUpdate> Updates { get; } = new();
+
+        public void Report(ExportProgressUpdate update)
+        {
+            Updates.Add(update);
         }
     }
 
