@@ -47,8 +47,8 @@ public partial class App : System.Windows.Application
         else
         {
             // GUI mode - normal WPF startup
+            StartupUri = new Uri("MainWindow.xaml", UriKind.Relative);
             base.OnStartup(e);
         }
     }
 }
-
