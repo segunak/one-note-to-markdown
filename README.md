@@ -181,9 +181,9 @@ OneNoteMarkdownExporter.exe --all --asset-organization page
 
 ### Assets Folder
 
-Exported images are saved to `<output>\_assets` by default. This is the `centralized` asset organization mode.
+Exported images and file attachments are saved to `<output>\_assets` by default. This is the `centralized` asset organization mode. Attachments are copied as-is and linked at the end of their Markdown page. If a cached attachment can't be copied, the page shows an unavailable note instead.
 
-Use the GUI assets folder field or the CLI `--assets-folder <path>` option to choose a different centralized folder. Relative paths are resolved from the output directory, and absolute paths are used as provided. Missing folders are created automatically. Existing asset folders are reused, and generated asset files with the same names are overwritten on later exports. Paths where the assets folder itself would be an existing file are rejected. Markdown image links are generated relative to each exported page.
+Use the GUI assets folder field or the CLI `--assets-folder <path>` option to choose a different centralized folder. Relative paths are resolved from the output directory, and absolute paths are used as provided. Missing folders are created automatically. Existing asset folders are reused, and generated asset files with the same names are overwritten on later exports. Paths where the assets folder itself would be an existing file are rejected. Markdown asset links are generated relative to each exported page when possible.
 
 Generated assets folders are created only when exported content actually contains assets.
 

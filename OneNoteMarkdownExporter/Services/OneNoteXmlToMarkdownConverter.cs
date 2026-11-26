@@ -87,6 +87,13 @@ namespace OneNoteMarkdownExporter.Services
                 ProcessImage(image, htmlBuilder);
             }
 
+            var pageId = doc.Root.Attribute("ID")?.Value ?? _pagePrefix;
+            var attachmentIndex = 0;
+            foreach (var attachment in doc.Root.Descendants(_ns + "InsertedFile"))
+            {
+                htmlBuilder.AppendLine(ProcessAttachmentToHtml(attachment, pageId, ++attachmentIndex));
+            }
+
             htmlBuilder.AppendLine("</body></html>");
 
             // Get the HTML and normalize anchor tags BEFORE ReverseMarkdown processing
@@ -610,6 +617,40 @@ namespace OneNoteMarkdownExporter.Services
             catch (Exception ex)
             {
                 return $"<p><em>[Image export failed: {System.Net.WebUtility.HtmlEncode(ex.Message)}]</em></p>";
+            }
+        }
+
+        private string ProcessAttachmentToHtml(XElement attachment, string pageId, int attachmentIndex)
+        {
+            var name = Path.GetFileName(attachment.Attribute("preferredName")?.Value);
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                name = Path.GetFileName(attachment.Attribute("pathSource")?.Value);
+            }
+
+            name = string.IsNullOrWhiteSpace(name) ? "attachment" : name;
+            var label = System.Net.WebUtility.HtmlEncode(ProtectLiteralPlainText(name));
+            var cachePath = attachment.Attribute("pathCache")?.Value;
+            if (string.IsNullOrWhiteSpace(cachePath) || !Path.IsPathFullyQualified(cachePath))
+            {
+                return $"<p><em>Attachment unavailable: {label} (no local cache path)</em></p>";
+            }
+
+            try
+            {
+                var fileName = ExportPathSanitizer.GetSafeAttachmentFileName(_assetsFolder, name, pageId, attachmentIndex);
+                var linkPath = Path.Combine(_relativeAssetsPath, fileName);
+                var href = Path.IsPathFullyQualified(linkPath)
+                    ? new Uri(linkPath).AbsoluteUri
+                    : string.Join("/", linkPath.Replace('\\', '/').Split('/').Select(Uri.EscapeDataString));
+
+                Directory.CreateDirectory(_assetsFolder);
+                File.Copy(cachePath, Path.Combine(_assetsFolder, fileName), overwrite: true);
+                return $"<p><a href=\"{System.Net.WebUtility.HtmlEncode(href)}\">{label}</a></p>";
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+            {
+                return $"<p><em>Attachment unavailable: {label} (could not copy the cached file)</em></p>";
             }
         }
 

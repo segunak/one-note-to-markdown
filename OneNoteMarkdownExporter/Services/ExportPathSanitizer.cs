@@ -89,6 +89,15 @@ namespace OneNoteMarkdownExporter.Services
             return FitComponentToPath(assetsFolder, stem, normalizedExtension, stableInput, MaxWin32PathLength);
         }
 
+        internal static string GetSafeAttachmentFileName(string assetsFolder, string originalName, string pageId, int attachmentIndex)
+        {
+            var safeName = SanitizeComponent(originalName, "attachment");
+            var extension = Path.GetExtension(safeName);
+            var stableInput = FormattableString.Invariant($"{pageId}\0attachment:{attachmentIndex}");
+            var stem = $"{Path.GetFileNameWithoutExtension(safeName)}_{GetStableHash(stableInput)}";
+            return FitComponentToPath(assetsFolder, stem, extension, stableInput, MaxWin32PathLength);
+        }
+
         public static string GetSafeAssetScopeDirectoryPath(
             string parentPath,
             string prefix,

@@ -1,4 +1,6 @@
 using System.IO;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using FluentAssertions;
 using OneNoteMarkdownExporter.Services;
 using Xunit;
@@ -674,6 +676,89 @@ public class OneNoteXmlToMarkdownConverterTests
         {
             if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true);
         }
+    }
+
+    #endregion
+
+    #region Attachment Tests
+
+    [Fact]
+    public void Convert_InsertedFiles_CopyCachedBytesAndAppendLinks()
+    {
+        var tempRoot = Directory.CreateTempSubdirectory().FullName;
+        try
+        {
+            var assetsFolder = Path.Combine(tempRoot, "shared assets");
+            var workbookCache = Path.Combine(tempRoot, "workbook.bin");
+            var duplicateCache = Path.Combine(tempRoot, "duplicate.bin");
+            var archiveCache = Path.Combine(tempRoot, "archive.bin");
+            File.WriteAllBytes(workbookCache, [1, 2, 3]);
+            File.WriteAllBytes(duplicateCache, [4, 5, 6]);
+            File.WriteAllBytes(archiveCache, [0, 255]);
+
+            var xml = $"""
+                <one:Page xmlns:one="http://schemas.microsoft.com/office/onenote/2013/onenote" ID="first-page">
+                    <one:Outline><one:OEChildren><one:OE>
+                        <one:T>Page body</one:T>
+                        <one:OEChildren><one:OE>
+                            <one:InsertedFile preferredName="Budget [final].xlsx" {new XAttribute("pathCache", workbookCache)} />
+                            <one:InsertedFile preferredName="Budget [final].xlsx" {new XAttribute("pathCache", duplicateCache)} />
+                        </one:OE></one:OEChildren>
+                    </one:OE></one:OEChildren></one:Outline>
+                    <one:InsertedFile preferredName="Archive (1).zip" {new XAttribute("pathCache", archiveCache)} />
+                </one:Page>
+                """;
+
+            var markdown = _converter.Convert(xml, assetsFolder, "../shared assets", pagePrefix: "Same title");
+            markdown.Should().StartWith("Page body\n\n").And.Contain(@"[Budget \[final\].xlsx](../shared%20assets/");
+            var files = GetAttachmentLinkFileNames(markdown);
+            files.Should().HaveCount(3).And.OnlyHaveUniqueItems();
+            files.Select(Path.GetExtension).Should().Equal(".xlsx", ".xlsx", ".zip");
+            File.ReadAllBytes(Path.Combine(assetsFolder, files[0])).Should().Equal(File.ReadAllBytes(workbookCache));
+            File.ReadAllBytes(Path.Combine(assetsFolder, files[1])).Should().Equal(File.ReadAllBytes(duplicateCache));
+            File.ReadAllBytes(Path.Combine(assetsFolder, files[2])).Should().Equal(File.ReadAllBytes(archiveCache));
+
+            var otherPageXml = xml.Replace("ID=\"first-page\"", "ID=\"second-page\"");
+            var otherMarkdown = _converter.Convert(otherPageXml, assetsFolder, "../shared assets", pagePrefix: "Same title");
+            GetAttachmentLinkFileNames(otherMarkdown).Should().HaveCount(3).And.NotIntersectWith(files);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, true);
+        }
+    }
+
+    [Fact]
+    public void Convert_InsertedFileWithMissingCache_ShowsUnavailableInsteadOfLinkingSource()
+    {
+        var tempRoot = Directory.CreateTempSubdirectory().FullName;
+        try
+        {
+            var assetsFolder = Path.Combine(tempRoot, "_assets");
+            var sourcePath = Path.Combine(tempRoot, "Notes.docx");
+            File.WriteAllBytes(sourcePath, [1, 2, 3]);
+            var xml = CreatePageXml($"""
+                <one:InsertedFile preferredName="Notes.docx"
+                    {new XAttribute("pathCache", Path.Combine(tempRoot, "missing.bin"))}
+                    {new XAttribute("pathSource", sourcePath)} />
+                """);
+
+            var markdown = _converter.Convert(xml, assetsFolder, "_assets");
+
+            markdown.Should().Contain("Attachment unavailable: Notes.docx").And.NotContain("](");
+            Directory.GetFiles(tempRoot, "*", SearchOption.AllDirectories).Should().Equal(sourcePath);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, true);
+        }
+    }
+
+    private static string[] GetAttachmentLinkFileNames(string markdown)
+    {
+        return Regex.Matches(markdown, @"\]\(\.\./shared%20assets/([^\s)]+)\)")
+            .Select(match => Uri.UnescapeDataString(match.Groups[1].Value))
+            .ToArray();
     }
 
     #endregion
